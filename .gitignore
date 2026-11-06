@@ -35,3 +35,11 @@
 
 # Release-only compiled original exporter bundle.
 /exporters/
+
+# Nintendo Switch build artifacts, toolchains, outputs and temporary logs
+/ferramentas/devkitpro/
+/ferramentas/**/out/
+/ferramentas/**/target/
+/ferramentas/**/__pycache__/
+test*.log
+*.log
