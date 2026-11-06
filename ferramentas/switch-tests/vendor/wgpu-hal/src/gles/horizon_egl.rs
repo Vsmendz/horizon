@@ -8,7 +8,7 @@ and the `wgpu_hal::Surface` swapchain implementation (offscreen renderbuffer + Y
 over the active libnx EGL context.
 */
 
-use alloc::{sync::Arc, vec::Vec};
+use alloc::{format, string::String, sync::Arc, vec::Vec};
 use core::{ffi, fmt, mem::ManuallyDrop, ops, ptr, time::Duration};
 use glow::HasContext;
 use parking_lot::{Mutex, MutexGuard, RwLock};
@@ -146,6 +146,107 @@ impl super::Device {
         &self.shared.context
     }
 
+    pub fn diagnostic_atlas_sampling(
+        &self,
+        texture: &super::Texture,
+        sampler: &super::Sampler,
+        layers: &[[u8; 4]],
+        mut log: impl FnMut(&str),
+    ) -> Result<usize, String> {
+        let (raw, _) = texture.inner.as_native();
+        diagnostic_atlas::probe(&self.context().lock(), raw, sampler.raw, layers, &mut log)
+    }
+
+    /// Inspect the GLES state left by the last textured draw in a submission.
+    pub fn diagnostic_atlas_binding(
+        &self,
+        pipeline: &super::RenderPipeline,
+        view: &super::TextureView,
+        sampler: &super::Sampler,
+        mut log: impl FnMut(&str),
+    ) {
+        let gl = self.context().lock();
+        unsafe {
+            let program = pipeline.inner.program;
+            let current = gl.get_parameter_program(glow::CURRENT_PROGRAM);
+            let (expected_texture, target) = view.inner.as_native();
+            let active = gl.get_parameter_i32(glow::ACTIVE_TEXTURE);
+            let mut found = false;
+            for index in 0..gl.get_active_uniforms(program) {
+                let Some(uniform) = gl.get_active_uniform(program, index) else {
+                    continue;
+                };
+                if uniform.utype != glow::SAMPLER_2D_ARRAY {
+                    continue;
+                }
+                found = true;
+                let Some(location) = gl.get_uniform_location(program, &uniform.name) else {
+                    log(&format!(
+                        "GLES_ATLAS_BIND missing_location={:?}",
+                        uniform.name
+                    ));
+                    continue;
+                };
+                let mut units = [-1];
+                gl.get_uniform_i32(program, &location, &mut units);
+                let unit = units[0];
+                let unit_count = gl.get_parameter_i32(glow::MAX_COMBINED_TEXTURE_IMAGE_UNITS);
+                if !(0..unit_count).contains(&unit) {
+                    log(&format!(
+                        "GLES_ATLAS_BIND uniform={:?} invalid_unit={unit}",
+                        uniform.name
+                    ));
+                    continue;
+                }
+                gl.active_texture(glow::TEXTURE0 + unit as u32);
+                let bound = gl.get_parameter_texture(glow::TEXTURE_BINDING_2D_ARRAY);
+                let bound_sampler = gl.get_parameter_sampler(glow::SAMPLER_BINDING);
+                let parameters = bound.map(|_| {
+                    [
+                        glow::TEXTURE_BASE_LEVEL,
+                        glow::TEXTURE_MAX_LEVEL,
+                        glow::TEXTURE_MIN_FILTER,
+                        glow::TEXTURE_MAG_FILTER,
+                    ]
+                    .map(|param| gl.get_tex_parameter_i32(glow::TEXTURE_2D_ARRAY, param))
+                });
+                let sampler_filter = bound_sampler
+                    .map(|raw| gl.get_sampler_parameter_i32(raw, glow::TEXTURE_MIN_FILTER));
+                let version = gl.version();
+                let level_size = if bound.is_some() && (version.major, version.minor) >= (3, 1) {
+                    Some(
+                        [
+                            glow::TEXTURE_WIDTH,
+                            glow::TEXTURE_HEIGHT,
+                            glow::TEXTURE_DEPTH,
+                        ]
+                        .map(|param| {
+                            gl.get_tex_level_parameter_i32(glow::TEXTURE_2D_ARRAY, 0, param)
+                        }),
+                    )
+                } else {
+                    None
+                };
+                gl.active_texture(active as u32);
+                log(&format!(
+                    "GLES_ATLAS_BIND uniform={:?} unit={unit} active={active:#x} current={current:?} expected_program={program:?} target={target:#x} bound={bound:?} expected_texture={expected_texture:?} bound_sampler={bound_sampler:?} client_sampler={:?} sampler_map={:?} view_layers={:?} view_mips={:?} params(base,max,min,mag)={parameters:?} sampler_min={sampler_filter:?} level0={level_size:?} error={:#x}",
+                    uniform.name,
+                    sampler.raw,
+                    pipeline.inner.sampler_map.get(unit as usize),
+                    view.array_layers,
+                    view.mip_levels,
+                    gl.get_error(),
+                ));
+            }
+            if !found {
+                log(&format!(
+                    "GLES_ATLAS_BIND no_active_sampler2DArray current={current:?} expected_program={program:?} error={:#x}",
+                    gl.get_error()
+                ));
+            }
+        }
+    }
+
     /// Diagnostic readback of one RGBA8 array layer between submissions.
     pub fn diagnostic_atlas_layer(
         &self,
@@ -156,6 +257,7 @@ impl super::Device {
         let gl = self.context().lock();
         unsafe {
             let (raw, _) = texture.inner.as_native();
+            let previous = gl.get_parameter_framebuffer(glow::READ_FRAMEBUFFER_BINDING);
             let framebuffer = gl.create_framebuffer().expect("diagnostic framebuffer");
             gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(framebuffer));
             gl.framebuffer_texture_layer(
@@ -177,7 +279,7 @@ impl super::Device {
                     glow::PixelPackData::Slice(Some(bytes)),
                 );
             }
-            gl.bind_framebuffer(glow::READ_FRAMEBUFFER, None);
+            gl.bind_framebuffer(glow::READ_FRAMEBUFFER, previous);
             gl.delete_framebuffer(framebuffer);
             (status, gl.get_error())
         }
@@ -206,6 +308,8 @@ enum PresentProbe {
     Captured(FrameProbe),
 }
 
+#[path = "diagnostic_atlas.rs"]
+mod diagnostic_atlas;
 #[path = "diagnostic_readback.rs"]
 mod diagnostic_readback;
 use diagnostic_readback::{FrameProbe, sample_frame};
