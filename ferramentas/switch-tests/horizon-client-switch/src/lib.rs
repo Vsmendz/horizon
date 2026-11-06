@@ -2190,6 +2190,7 @@ const MAX_VERTEX_BUFFER_BYTES: u64 = 6 * 1024 * 1024; // 6 MiB
 const STAGING_BUFFER_BYTES: u64 = 6 * 1024 * 1024; // 6 MiB
 
 #[unsafe(no_mangle)]
+#[cfg(target_os = "horizon")]
 pub extern "C" fn rust_horizon_client_main() -> c_int {
     let startup = Instant::now();
     log_line("INFO Compile-time ABI assertions passed (163 SDK checks)");

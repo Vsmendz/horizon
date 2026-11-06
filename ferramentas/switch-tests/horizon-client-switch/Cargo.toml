@@ -34,3 +34,6 @@ glam = "=0.30.10"
 bytemuck = { version = "=1.25.0", features = ["derive"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["raw_value"] }
+
+[target.'cfg(not(target_os = "horizon"))'.dependencies]
+wgpu-hal = { path = "../vendor/wgpu-hal", features = ["khronos-egl", "wayland-sys", "libloading"] }

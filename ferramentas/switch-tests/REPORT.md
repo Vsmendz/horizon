@@ -335,7 +335,7 @@ The loopback test uses the SDK nxlink executable and the capture sender. It veri
 
 Test 6B remains the stable client baseline. The next hardware milestone is the original vanilla generator, exercised in isolation before integration with the async streaming worker.
 
-## Test 7 — Isolated Java 26.3 terrain column (awaiting hardware)
+## Test 7 — Isolated Java 26.3 terrain column (confirmed on hardware)
 
 `horizon-worldgen-switch` uses `BlockRegistry::from_facts_json`, `GeneratorData::load`, the normal overworld preset via `OverworldGenerator::new`, and `GeneratorWorker::generate_proto`. It runs the original pre-light terrain pipeline with biome sampling, noise, aquifers, surface rules, structure starts and terrain adaptation, and carvers. The probe holds one generated column at a time and runs generation on one dedicated Rust thread. The main thread keeps the libnx text console responsive and mirrors progress to the SD log. This stage has no playable client, decoration pass, lighting, or game saves.
 
@@ -370,7 +370,7 @@ The first AArch64 link exposed a missing `pread` symbol. The installed newlib he
     CARGO_NET_OFFLINE=true python3 ferramentas/switch-tests/build.py test7_vanilla_worldgen
     ferramentas/devkitpro/tools/bin/nxlink -a 192.168.1.5 ferramentas/switch-tests/out/test7_vanilla_worldgen.nro
 
-On hardware wait for the Java parity and NBT PASS line and `RESULT=0`, then press PLUS. Copy `sdmc:/switch/horizon-tests/test7_vanilla_worldgen.log` back to the project. The physical Switch execution matched the Java reference fingerprints, heightmaps, NBT and determinism (init 59,761 ms, first column 1,180 ms, repeat 64 ms, RESULT=0).
+The physical Switch execution matched the Java reference fingerprints, heightmaps, NBT and determinism (init 59,761 ms, first column 1,180 ms, repeat 64 ms, RESULT=0). The reported 3,339,825,152 bytes is kernel process-memory accounting, including mapped heap. libnx can allocate the available heap at startup, so the number does not identify the live allocations attributable to generation. See [libnx heap initialization](https://github.com/switchbrew/libnx/blob/master/nx/source/runtime/init.c) and [Switchbrew GetInfo](https://switchbrew.org/wiki/SVC#InfoType).
 
 ## Test 8 — Vanilla Java 26.3 world generation with async streaming client (awaiting hardware validation)
 
@@ -393,8 +393,8 @@ Offline validation:
 - NRO artifact: `ferramentas/switch-tests/out/test8_vanilla_streaming.nro` (57,885,357 bytes, SHA-256 `106db3017167533a076c0c781f98cafa809767cea44ed8e9ab4876eef9f3fc72`).
 
 Pending hardware items:
-- Physical validation on Switch hardware awaiting execution by the user.
-- Investigation of the ~60s cold startup time observed in Test 7 (parsing and deserializing large registry/worldgen tables on flash storage) noted as a known performance follow-up item.
+- The user ran Test 8 on hardware and observed a black terrain-shaped region. The log and photograph have not been located. The cause remains under investigation and visual validation remains pending.
+- The cause of the ~60s cold startup observed in Test 7 remains to be isolated with hardware timing data.
 
 How to deploy:
 ```sh
