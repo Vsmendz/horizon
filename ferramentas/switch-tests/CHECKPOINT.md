@@ -94,3 +94,9 @@ The 8D console log identified the regression. The 42-layer atlas was allocated a
 8F reuses the original Horizon fluid tessellator and registry states for water. It adds a GLES alpha-blended terrain pass with the original still, flow and overlay sprites. It keeps the 8E save path and format. See `REPORT.md` for tests, current approximations and the physical checklist.
 
 8F passed the Linux GLES and vanilla suite (26 passed), legacy streaming (14 passed), and the regular desktop mesher suite (55 passed). The static AArch64 ELF, NRO and all 1,672 RomFS files passed verification, and the 18 earlier NRO hashes match. Artifact `out/test8f_vanilla_water_fix.nro`, SHA-256 `e91c33a629e3f14f26e4219ace680636f66447b44e422916e6cf73b6ea92d6e6`. Physical validation is pending.
+
+The 8F hardware log confirms execution and clean exit, with 6,851 frames, six breaks, 43 placements, one saved chunk, `RESULT=0` and `RETURN 0`. Water appearance outside the submerged region remains pending. The 19 prior NRO hashes matched before Test 9. The local recovery branch `switch-test9-checkpoint` points to `6d000a895`.
+
+Test 9 shares the desktop hand motion and equip state, uses baked model display transforms, adds configurable FOV and preserves immediate stick look. It checks the actual fluid and collision at a restored pose, supports upward and downward water movement and blends biome fog when the camera submerges. See `REPORT.md` for the hardware checklist and remaining parity work.
+
+Test 9 passed static AArch64 and NRO checks. All 1,672 RomFS files match the 8F image and all 19 earlier NRO hashes match. Artifact `out/test9_vanilla_first_person_polish.nro`, SHA-256 `cdcfa680ce8b76710655762d0e6a2a337727d59a3b41120797210a157104a9cb`. Awaiting hardware validation.

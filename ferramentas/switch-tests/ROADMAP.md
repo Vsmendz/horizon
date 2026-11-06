@@ -10,7 +10,8 @@
 | Vanilla generator resource audit | Completed offline | The existing 51-file RomFS contains render assets. The generator additionally requires the matching block registry and worldgen bundle, which this checkout lacks |
 | Isolated vanilla terrain | Hardware confirmed | Test 7. Matched Java 26.3 reference, heightmaps, NBT and determinism on physical Switch |
 | Vanilla terrain in the playable client | Hardware confirmed | Test 8E confirmed textured terrain, the hotbar, asynchronous streaming, edits and clean shutdown |
-| Vanilla water geometry and transparency | Offline validation | Test 8F uses shared fluid tessellation, a translucent GLES pass and the original water sprites. Confirm shoreline, water depth appearance and performance on Switch |
+| Vanilla water geometry and transparency | Executed on hardware | Test 8F exited cleanly. Confirm the shoreline and water appearance outside the submerged region |
+| Vanilla first-person polish | Awaiting physical validation | Test 9 integrates block display transforms, tick-based swing and equip animations, FOV, save recovery, water movement and underwater fog |
 | Singleplayer mechanics and essential interfaces | Pending | Extend the validated world and connect the original player, inventory, crafting and menu systems |
 | Entities, audio and performance tuning | Pending | Establish resource budgets from hardware measurements |
 

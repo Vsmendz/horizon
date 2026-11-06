@@ -296,7 +296,7 @@
       "test": "test8f_vanilla_water_fix",
       "build": "passed",
       "link": "passed",
-      "hardware": "pending",
+      "hardware": "user_confirmed_execution",
       "file": "ferramentas/switch-tests/out/test8f_vanilla_water_fix.nro",
       "bytes": 57950497,
       "sha256": "e91c33a629e3f14f26e4219ace680636f66447b44e422916e6cf73b6ea92d6e6",
@@ -305,7 +305,24 @@
       "build_log": "ferramentas/switch-tests/out/test8f_vanilla_water_fix.build.log",
       "offline_log": "ferramentas/switch-tests/out/test8f_vanilla_water_fix.offline.log",
       "test_log": "ferramentas/switch-tests/out/test8f.gles.log",
-      "runtime_log": "sdmc:/switch/horizon-tests/test8f_vanilla_water_fix.log"
+      "runtime_log": "sdmc:/switch/horizon-tests/test8f_vanilla_water_fix.log",
+      "hardware_log": "test8f_vanilla_water_fix.log",
+      "confirmation": "6851 frames, six breaks, 43 placements, one saved chunk, RESULT=0 and RETURN 0. Full shoreline appearance is pending."
+    },
+    {
+      "test": "test9_vanilla_first_person_polish",
+      "build": "passed",
+      "link": "passed",
+      "hardware": "pending",
+      "file": "ferramentas/switch-tests/out/test9_vanilla_first_person_polish.nro",
+      "bytes": 57966881,
+      "sha256": "cdcfa680ce8b76710655762d0e6a2a337727d59a3b41120797210a157104a9cb",
+      "elf": "ferramentas/switch-tests/out/test9_vanilla_first_person_polish.elf",
+      "elf_sha256": "a59195beabd8aa292a575d085c0c93955f2557c32b0f0de00135a5b61f2d6535",
+      "build_log": "ferramentas/switch-tests/out/test9_vanilla_first_person_polish.build.log",
+      "offline_log": "ferramentas/switch-tests/out/test9_vanilla_first_person_polish.offline.log",
+      "test_log": "ferramentas/switch-tests/out/test9.gles.log",
+      "runtime_log": "sdmc:/switch/horizon-tests/test9_vanilla_first_person_polish.log"
     }
   ]
 }
