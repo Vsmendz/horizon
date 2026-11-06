@@ -153,8 +153,13 @@ impl super::Device {
         layers: &[[u8; 4]],
         mut log: impl FnMut(&str),
     ) -> Result<usize, String> {
-        let (raw, _) = texture.inner.as_native();
-        diagnostic_atlas::probe(&self.context().lock(), raw, sampler.raw, layers, &mut log)
+        diagnostic_atlas::probe(
+            &self.context().lock(),
+            texture.inner.as_native(),
+            sampler.raw,
+            layers,
+            &mut log,
+        )
     }
 
     /// Inspect the GLES state left by the last textured draw in a submission.
@@ -200,6 +205,9 @@ impl super::Device {
                 }
                 gl.active_texture(glow::TEXTURE0 + unit as u32);
                 let bound = gl.get_parameter_texture(glow::TEXTURE_BINDING_2D_ARRAY);
+                let cube_array = ((gl.version().major, gl.version().minor) >= (3, 2))
+                    .then(|| gl.get_parameter_texture(glow::TEXTURE_BINDING_CUBE_MAP_ARRAY))
+                    .flatten();
                 let bound_sampler = gl.get_parameter_sampler(glow::SAMPLER_BINDING);
                 let parameters = bound.map(|_| {
                     [
@@ -229,7 +237,7 @@ impl super::Device {
                 };
                 gl.active_texture(active as u32);
                 log(&format!(
-                    "GLES_ATLAS_BIND uniform={:?} unit={unit} active={active:#x} current={current:?} expected_program={program:?} target={target:#x} bound={bound:?} expected_texture={expected_texture:?} bound_sampler={bound_sampler:?} client_sampler={:?} sampler_map={:?} view_layers={:?} view_mips={:?} params(base,max,min,mag)={parameters:?} sampler_min={sampler_filter:?} level0={level_size:?} error={:#x}",
+                    "GLES_ATLAS_BIND uniform={:?} unit={unit} active={active:#x} current={current:?} expected_program={program:?} target={target:#x} bound={bound:?} cube_array={cube_array:?} expected_texture={expected_texture:?} bound_sampler={bound_sampler:?} client_sampler={:?} sampler_map={:?} view_layers={:?} view_mips={:?} params(base,max,min,mag)={parameters:?} sampler_min={sampler_filter:?} level0={level_size:?} error={:#x}",
                     uniform.name,
                     sampler.raw,
                     pipeline.inner.sampler_map.get(unit as usize),

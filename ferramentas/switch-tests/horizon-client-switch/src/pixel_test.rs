@@ -2,6 +2,7 @@ use super::{CameraUniform, HORIZON_WGSL_SHADER, TerrainVertex};
 use glow::HasContext;
 use khronos_egl as egl;
 use naga::back::glsl;
+use wgpu_hal::{Adapter as _, Device as _};
 
 #[path = "../../vendor/wgpu-hal/src/gles/diagnostic_atlas.rs"]
 mod diagnostic_atlas;
@@ -61,16 +62,26 @@ unsafe fn run() {
     egl.make_current(display, Some(surface), Some(surface), Some(context))
         .unwrap();
     unsafe {
-        let gl = glow::Context::from_loader_function(|name| {
+        let load = |name: &str| {
             egl.get_proc_address(name)
                 .map_or(std::ptr::null(), |ptr| ptr as *const _)
-        });
+        };
+        let gl = glow::Context::from_loader_function(load);
         println!(
             "GLES {} | {}",
             gl.get_parameter_string(glow::VERSION),
             gl.get_parameter_string(glow::RENDERER)
         );
-        verify_pixels(&gl);
+        let adapter = wgpu_hal::gles::Adapter::new_external(load, Default::default()).unwrap();
+        let device = adapter
+            .adapter
+            .open(
+                wgpu_types::Features::empty(),
+                &wgpu_types::Limits::downlevel_defaults(),
+                &wgpu_types::MemoryHints::default(),
+            )
+            .unwrap();
+        verify_pixels(&gl, &device.device);
         verify_readback(&gl);
     }
     egl.make_current(display, None, None, None).unwrap();
@@ -151,7 +162,7 @@ unsafe fn verify_readback(gl: &glow::Context) {
     }
 }
 
-unsafe fn verify_pixels(gl: &glow::Context) {
+unsafe fn verify_pixels(gl: &glow::Context, device: &wgpu_hal::gles::Device) {
     unsafe {
         let vao = gl.create_vertex_array().unwrap();
         gl.bind_vertex_array(Some(vao));
@@ -184,10 +195,49 @@ unsafe fn verify_pixels(gl: &glow::Context) {
             glow::STATIC_DRAW,
         );
         gl.bind_buffer_base(glow::UNIFORM_BUFFER, 0, Some(uniforms));
-        let texture = gl.create_texture().unwrap();
+        let mut descriptor = wgpu_hal::TextureDescriptor {
+            label: Some("offscreen client atlas"),
+            size: wgpu_types::Extent3d {
+                width: 16,
+                height: 16,
+                depth_or_array_layers: 15,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu_types::TextureDimension::D2,
+            format: wgpu_types::TextureFormat::Rgba8Unorm,
+            usage: wgpu_types::TextureUses::COPY_DST | wgpu_types::TextureUses::RESOURCE,
+            memory_flags: wgpu_hal::MemoryFlags::empty(),
+            view_formats: Vec::new(),
+        };
+        for (layers, expected_target) in [
+            (15, glow::TEXTURE_2D_ARRAY),
+            (42, glow::TEXTURE_CUBE_MAP_ARRAY),
+        ] {
+            descriptor.size.depth_or_array_layers = layers;
+            let inferred = device.create_texture(&descriptor).unwrap();
+            let wgpu_hal::gles::TextureInner::Texture { raw, target } = inferred.inner else {
+                panic!("expected texture storage");
+            };
+            assert_eq!(target, expected_target);
+            if layers == 42 {
+                gl.bind_texture(glow::TEXTURE_2D_ARRAY, Some(raw));
+                assert_eq!(gl.get_error(), glow::INVALID_OPERATION);
+            }
+            device.destroy_texture(inferred);
+        }
+        let atlas = device.create_texture_2d_array(&descriptor).unwrap();
+        let wgpu_hal::gles::TextureInner::Texture {
+            raw: texture,
+            target,
+        } = atlas.inner
+        else {
+            panic!("expected explicit texture storage");
+        };
+        assert_eq!(target, glow::TEXTURE_2D_ARRAY);
         gl.active_texture(glow::TEXTURE0);
         gl.bind_texture(glow::TEXTURE_2D_ARRAY, Some(texture));
-        gl.tex_storage_3d(glow::TEXTURE_2D_ARRAY, 1, glow::RGBA8, 16, 16, 42);
+        gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_BASE_LEVEL, 0);
         gl.tex_parameter_i32(glow::TEXTURE_2D_ARRAY, glow::TEXTURE_MAX_LEVEL, 0);
         let sampler = gl.create_sampler().unwrap();
         gl.sampler_parameter_i32(
@@ -244,10 +294,11 @@ unsafe fn verify_pixels(gl: &glow::Context) {
             .chunks_exact(1024)
             .map(|layer| layer[..4].try_into().unwrap())
             .collect();
-        let failures = diagnostic_atlas::probe(gl, texture, sampler, &cpu_layers, &mut |line| {
-            println!("{line}");
-        })
-        .unwrap();
+        let failures =
+            diagnostic_atlas::probe(gl, (texture, target), sampler, &cpu_layers, &mut |line| {
+                println!("{line}");
+            })
+            .unwrap();
         assert_eq!(failures, 0, "direct GLES atlas probe");
         assert_eq!(
             gl.get_parameter_i32(glow::ACTIVE_TEXTURE),
@@ -463,6 +514,7 @@ unsafe fn verify_pixels(gl: &glow::Context) {
             assert_eq!(gl.get_error(), glow::NO_ERROR);
             println!("GLES controlled panels: {actual:?}");
         }
+        device.destroy_texture(atlas);
     }
 }
 

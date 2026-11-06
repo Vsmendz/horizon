@@ -65,7 +65,7 @@ void main() {{
 
 pub fn probe(
     gl: &glow::Context,
-    atlas: glow::Texture,
+    atlas: (glow::Texture, u32),
     sampler: glow::Sampler,
     layers: &[[u8; 4]],
     log: &mut dyn FnMut(&str),
@@ -163,37 +163,46 @@ pub fn probe(
         // distinct known color per layer and uses the same dimensions and format.
         let targets = [
             ("client", glow::TEXTURE_2D_ARRAY, layers.len()),
-            ("client_nearest", glow::TEXTURE_2D_ARRAY, layers.len()),
             ("2d", glow::TEXTURE_2D, 1),
             ("array15", glow::TEXTURE_2D_ARRAY, 15),
             ("array42", glow::TEXTURE_2D_ARRAY, 42),
             ("array42_mutable", glow::TEXTURE_2D_ARRAY, 42),
         ];
         for (name, target, depth) in targets {
-            let owned = !name.starts_with("client");
+            let owned = name != "client";
+            if !owned && atlas.1 != target {
+                log(&format!(
+                    "GLES_ATLAS_NATIVE name=client skipped_target_mismatch actual={:#x} required={target:#x}",
+                    atlas.1
+                ));
+                failures += 1;
+                continue;
+            }
             let texture = if owned {
                 gl.create_texture().expect("probe texture")
             } else {
-                atlas
+                atlas.0
             };
             let control_color =
                 |layer: usize| [16 + layer as u8 * 5, 180 - layer as u8 * 3, 64, 255];
             gl.active_texture(glow::TEXTURE0);
             gl.bind_texture(target, Some(texture));
-            let params = [
-                glow::TEXTURE_BASE_LEVEL,
-                glow::TEXTURE_MAX_LEVEL,
-                glow::TEXTURE_MIN_FILTER,
-                glow::TEXTURE_MAG_FILTER,
-            ];
-            let original = params.map(|param| gl.get_tex_parameter_i32(target, param));
-            gl.tex_parameter_i32(target, glow::TEXTURE_BASE_LEVEL, 0);
-            gl.tex_parameter_i32(target, glow::TEXTURE_MAX_LEVEL, 0);
-            if owned || name == "client_nearest" {
-                gl.tex_parameter_i32(target, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
-                gl.tex_parameter_i32(target, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
+            let bind_error = gl.get_error();
+            if bind_error != 0 {
+                log(&format!(
+                    "GLES_ATLAS_NATIVE name={name} bind_error={bind_error:#x}"
+                ));
+                failures += 1;
+                if owned {
+                    gl.delete_texture(texture);
+                }
+                continue;
             }
             if owned {
+                gl.tex_parameter_i32(target, glow::TEXTURE_BASE_LEVEL, 0);
+                gl.tex_parameter_i32(target, glow::TEXTURE_MAX_LEVEL, 0);
+                gl.tex_parameter_i32(target, glow::TEXTURE_MIN_FILTER, glow::NEAREST as i32);
+                gl.tex_parameter_i32(target, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
                 let bytes: Vec<_> = (0..depth)
                     .flat_map(|layer| control_color(layer).repeat(16 * 16))
                     .collect();
@@ -293,10 +302,6 @@ pub fn probe(
             }
             if owned {
                 gl.delete_texture(texture);
-            } else {
-                for (param, value) in params.into_iter().zip(original) {
-                    gl.tex_parameter_i32(target, param, value);
-                }
             }
         }
         gl.use_program(current_program);
