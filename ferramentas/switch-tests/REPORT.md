@@ -487,7 +487,7 @@ Frame 2 adds a bottom-center panel at the last `GLES_WORLD`/`GLES_PRE`/`GLES_POS
 
 - The Linux client suite passed 24 tests with two ignored, including the GLES regression, vanilla oracle and save coverage. Legacy streaming passed 14 tests with one ignored. See `out/test8e.gles.log` and `out/test8e.legacy.log`.
 - Rust release and AArch64 link passed with zero undefined symbols and no dynamic dependencies. The NRO and ASET ranges are valid. The production WGSL matches 8D byte for byte, the RomFS matches Test 8, and all 17 earlier NRO hashes match. See `out/test8e_gles_atlas_fix.offline.log`.
-- Artifact `out/test8e_gles_atlas_fix.nro`, 57,946,797 bytes, SHA-256 `78554fb987fd8d81116d0c0c69bfe2d4d6ab1be999c3629dc90560bb1dc338c7`. Physical validation is pending.
+- Artifact `out/test8e_gles_atlas_fix.nro`, 57,946,797 bytes, SHA-256 `78554fb987fd8d81116d0c0c69bfe2d4d6ab1be999c3629dc90560bb1dc338c7`.
 
 ```sh
 source ferramentas/env.sh
@@ -496,4 +496,28 @@ ferramentas/devkitpro/tools/bin/nxlink -a <SWITCH_IP> ferramentas/switch-tests/o
 ```
 
 On Switch, inspect the terrain, held item and hotbar, cross a chunk boundary, and press PLUS. Copy `sdmc:/switch/horizon-tests/test8e_gles_atlas_fix.log` to the project. The diagnostic panels last a single frame and their sampled colors are recorded on the SD card.
+
+The user approved 8E on physical Switch. `test8e_gles_atlas_fix.log` records a matching texture object on target `0x8c1a`, mip 0, 42 layers, zero native probe failures and the expected post-blit control pixel `[92, 212, 56, 255]`. The run presented 5,282 frames, broke eight blocks, placed eleven, saved three chunks and exited with `RESULT=0` and `RETURN 0`. It recorded 25 intervals over 33 ms and a maximum column mesh time of 6,878 µs. The approved 8E SHA-256 matches the recorded hash. The user reported opaque blue water.
+
+## Test 8F — Vanilla water rendering
+
+The Switch prototype baked a fallback cube from the water particle sprite. Its terrain fragment used a cutout threshold and returned alpha 1. In the desktop renderer, the fluid tessellator computes weighted surface corners and face occlusion from registry states, uses the shared flow vector for top UVs, and chooses still, flow or overlay sprites. Water goes into the translucent pass and retains the sprite alpha.
+
+8F extracts the desktop geometry into `crates/horizon-client-render/src/mesher/fluid_geometry.rs` and uses it from both renderers. The Switch adapter reads the original fluid states, reuses `horizon-world` flow and uses the stored quart biome water tint. The terrain mesh emits water into a separate range. The existing upload budget stages the same resident buffer, with opaque geometry drawn first and the visible water ranges submitted back-to-front by section. Water uses standard alpha blending, depth testing and depth writing like the desktop pass. It renders before the hand and HUD. The layer size is 32×32 to preserve the original flow frames. Nearest expansion of the 16×16 sprites preserves their texels and alpha under the existing nearest sampling. The approved 8E atlas allocation fix is used for this array.
+
+The Switch adapter uses its existing full-block occlusion and model coverage, plus the leaves overlay. The flow calculation uses the Switch block motion flags and full-block support for neighbor queries. Fine occlusion for unsupported partial and waterlogged block models, blended biome borders, per-quad sorting inside sections, underwater camera effects and fluid simulation remain outside this milestone. Source, flowing and falling water are read from the persisted registry states. The save format and path stay the same. Water mesh invalidation now includes diagonal chunks and adjoining vertical sections at edited edges.
+
+The host tests cover an isolated source, sloped surface geometry and side UVs, hidden faces beside solids and other water, and translucent water over opaque geometry with depth occlusion. The streaming regression saves and reloads exact source, flowing and falling state IDs alongside the existing Java terrain and edit checks. The release logs frame and mesh timings on Switch for comparison with 8E.
+
+- The Switch client suite passed 26 tests with two ignored. Legacy streaming passed 14 tests with one ignored. The regular desktop mesher suite passed 55 tests with 17 ignored. Four opt-in desktop reuse tests stopped at resource loading because the local desktop bundle lacks `horizon-resources.json`. Logs are in `out/test8f.gles.log`, `out/test8f.legacy.log`, `out/test8f.desktop.log` and `out/test8f.desktop-prepared.log`.
+- Rust release and AArch64 link passed with zero undefined symbols and no dynamic dependencies. The NRO and ASET ranges are valid. All 1,672 RomFS files match staging. Relative to 8E, the RomFS adds `water_flow.png`, its animation metadata, and `water_overlay.png`, and updates the manifest. The original opaque and held-item WGSL matches 8E byte for byte. All 18 earlier NRO hashes match.
+- Artifact `out/test8f_vanilla_water_fix.nro`, 57,950,497 bytes. SHA-256 `e91c33a629e3f14f26e4219ace680636f66447b44e422916e6cf73b6ea92d6e6`. Physical validation is pending.
+
+```sh
+source ferramentas/env.sh
+CARGO_NET_OFFLINE=true python3 ferramentas/switch-tests/build.py test8f_vanilla_water_fix
+ferramentas/devkitpro/tools/bin/nxlink -a <SWITCH_IP> ferramentas/switch-tests/out/test8f_vanilla_water_fix.nro
+```
+
+On Switch, look at shallow water over blocks, shoreline sides and flowing water. Check that the bottom remains visible, that nearby terrain occludes water, and that the held item and hotbar render normally. Cross a chunk boundary along the shore, press PLUS and copy `sdmc:/switch/horizon-tests/test8f_vanilla_water_fix.log`. The build opens the same `switch_vanilla_test8` save directory.
 

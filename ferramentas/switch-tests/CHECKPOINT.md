@@ -87,4 +87,10 @@ The 8D console log identified the regression. The 42-layer atlas was allocated a
 
 8E explicitly allocates the production atlas as a 2D array and adds a separate 42-layer texture control through the same HAL upload, bind-group layout and sample shader. Native sampling checks the target before binding and leaves the atlas storage and parameters intact. The expected control pixel is `[92, 212, 56, 255]`. See `REPORT.md` for the physical validation procedure.
 
-8E passed the Linux GLES and vanilla suite (24 passed, two ignored), legacy streaming (14 passed, one ignored), and static AArch64 and NRO checks. The production WGSL matches 8D byte for byte, the RomFS matches Test 8, and all 17 earlier NRO hashes match. Artifact `out/test8e_gles_atlas_fix.nro`, SHA-256 `78554fb987fd8d81116d0c0c69bfe2d4d6ab1be999c3629dc90560bb1dc338c7`. Physical validation is pending.
+8E passed the Linux GLES and vanilla suite (24 passed, two ignored), legacy streaming (14 passed, one ignored), and static AArch64 and NRO checks. The production WGSL matches 8D byte for byte, the RomFS matches Test 8, and all 17 earlier NRO hashes match. Artifact `out/test8e_gles_atlas_fix.nro`, SHA-256 `78554fb987fd8d81116d0c0c69bfe2d4d6ab1be999c3629dc90560bb1dc338c7`.
+
+8E is approved on physical Switch. The supplied log confirms the 42-layer GLES 2D array, exact framebuffer control colors, asynchronous streaming, 5,282 frames, eight breaks, eleven placements, three saved chunks, `RESULT=0` and `RETURN 0`. The user confirmed textured terrain and hotbar. The 8E artifact is preserved and its recorded hash matches. Water still rendered as opaque blue.
+
+8F reuses the original Horizon fluid tessellator and registry states for water. It adds a GLES alpha-blended terrain pass with the original still, flow and overlay sprites. It keeps the 8E save path and format. See `REPORT.md` for tests, current approximations and the physical checklist.
+
+8F passed the Linux GLES and vanilla suite (26 passed), legacy streaming (14 passed), and the regular desktop mesher suite (55 passed). The static AArch64 ELF, NRO and all 1,672 RomFS files passed verification, and the 18 earlier NRO hashes match. Artifact `out/test8f_vanilla_water_fix.nro`, SHA-256 `e91c33a629e3f14f26e4219ace680636f66447b44e422916e6cf73b6ea92d6e6`. Physical validation is pending.

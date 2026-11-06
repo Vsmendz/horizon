@@ -9,10 +9,11 @@
 | Automatic nxlink log capture with SD fallback | Deferred | Test 6C ran on hardware. Callback unreachable. Use SD logs for subsequent tests |
 | Vanilla generator resource audit | Completed offline | The existing 51-file RomFS contains render assets. The generator additionally requires the matching block registry and worldgen bundle, which this checkout lacks |
 | Isolated vanilla terrain | Hardware confirmed | Test 7. Matched Java 26.3 reference, heightmaps, NBT and determinism on physical Switch |
-| Vanilla terrain in the playable client | Hardware rendering issue | Test 8 showed black terrain. Host checks passed, and the cause is still under investigation |
+| Vanilla terrain in the playable client | Hardware confirmed | Test 8E confirmed textured terrain, the hotbar, asynchronous streaming, edits and clean shutdown |
+| Vanilla water geometry and transparency | Offline validation | Test 8F uses shared fluid tessellation, a translucent GLES pass and the original water sprites. Confirm shoreline, water depth appearance and performance on Switch |
 | Singleplayer mechanics and essential interfaces | Pending | Extend the validated world and connect the original player, inventory, crafting and menu systems |
 | Entities, audio and performance tuning | Pending | Establish resource budgets from hardware measurements |
 
 Each new hardware milestone uses a separate NRO. Experimental save formats use separate SD directories.
 
-The current streaming milestone retains prototype Perlin terrain and a height of 32. Test 6 measured a 41 ms median synchronous transition before meshing. Test 6B moves generation and region I/O to one worker and records the remaining render-thread costs for comparison.
+Test 6 measured a 41 ms median synchronous transition before meshing. Test 6B moved generation and region I/O to one worker. The current client streams the vanilla Overworld at Y −64 through 319 and retains the incremental per-section GPU upload budget.
