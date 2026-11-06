@@ -144,6 +144,43 @@ impl super::Device {
     pub fn context(&self) -> &AdapterContext {
         &self.shared.context
     }
+
+    /// Diagnostic readback of one RGBA8 array layer between submissions.
+    pub fn diagnostic_atlas_layer(
+        &self,
+        texture: &super::Texture,
+        layer: i32,
+        bytes: &mut [u8],
+    ) -> (u32, u32) {
+        let gl = self.context().lock();
+        unsafe {
+            let (raw, _) = texture.inner.as_native();
+            let framebuffer = gl.create_framebuffer().expect("diagnostic framebuffer");
+            gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(framebuffer));
+            gl.framebuffer_texture_layer(
+                glow::READ_FRAMEBUFFER,
+                glow::COLOR_ATTACHMENT0,
+                Some(raw),
+                0,
+                layer,
+            );
+            let status = gl.check_framebuffer_status(glow::READ_FRAMEBUFFER);
+            if status == glow::FRAMEBUFFER_COMPLETE {
+                gl.read_pixels(
+                    0,
+                    0,
+                    texture.copy_size.width as i32,
+                    texture.copy_size.height as i32,
+                    glow::RGBA,
+                    glow::UNSIGNED_BYTE,
+                    glow::PixelPackData::Slice(Some(bytes)),
+                );
+            }
+            gl.bind_framebuffer(glow::READ_FRAMEBUFFER, None);
+            gl.delete_framebuffer(framebuffer);
+            (status, gl.get_error())
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -175,6 +212,41 @@ unsafe impl Send for Surface {}
 unsafe impl Sync for Surface {}
 
 impl Surface {
+    /// Sample the rendered swapchain before the window blit.
+    pub fn diagnostic_frame(
+        &self,
+        device: &super::Device,
+    ) -> Option<([u8; 4], [u8; 4], [u8; 4], u32)> {
+        let swapchain = self.swapchain.read();
+        let sc = swapchain.as_ref()?;
+        let gl = device.context().lock();
+        unsafe {
+            gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(sc.framebuffer));
+            let sample = |x, y| {
+                let mut bytes = [0; 4];
+                gl.read_pixels(
+                    x,
+                    y,
+                    1,
+                    1,
+                    glow::RGBA,
+                    glow::UNSIGNED_BYTE,
+                    glow::PixelPackData::Slice(Some(&mut bytes)),
+                );
+                bytes
+            };
+            let x = sc.extent.width as i32 / 2;
+            let y = sc.extent.height as i32;
+            let pixels = (
+                sample(x, y / 2),
+                sample(x, y * 94 / 100),
+                sample(x / 2, y * 3 / 4),
+            );
+            gl.bind_framebuffer(glow::READ_FRAMEBUFFER, None);
+            Some((pixels.0, pixels.1, pixels.2, gl.get_error()))
+        }
+    }
+
     /// Creates a `wgpu_hal::gles::Surface` backed by the currently bound EGL window surface (`framebuffer 0`).
     /// When `queue.present(&surface, texture)` is called, `Surface::present` blits the offscreen swapchain
     /// renderbuffer to framebuffer 0 (with Y-flip matching `wgpu-hal`'s `ADJUST_COORDINATE_SPACE`) and invokes

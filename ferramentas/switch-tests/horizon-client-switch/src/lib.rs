@@ -18,8 +18,14 @@
 #![allow(clippy::too_many_arguments)]
 
 mod block_palette;
+#[cfg(all(test, feature = "vanilla"))]
+mod block_table_probe;
 #[path = "../../../../crates/horizon-client-render/src/camera.rs"]
 pub mod camera;
+#[cfg(feature = "vanilla")]
+mod mesh_upload;
+#[cfg(all(test, target_os = "linux"))]
+mod pixel_test;
 #[allow(dead_code)]
 #[path = "../../../../crates/horizon-client/src/ticket_levels.rs"]
 mod ticket_levels;
@@ -1001,7 +1007,7 @@ fn vanilla_romfs_bakes_models_and_meshes_the_spawn() -> Result<(), Box<dyn std::
     let mut meshes = BTreeMap::new();
     let mesh_start = Instant::now();
     let rebuilt = world.refresh_meshes(&assets, &mut meshes, center, spawn.y, usize::MAX);
-    let vertices: usize = meshes.values().map(Vec::len).sum();
+    let vertices: usize = meshes.values().map(|mesh| mesh.vertices.len()).sum();
     assert!(vertices > 0 && vertices % 3 == 0);
     println!(
         "SPAWN_MESH spawn={spawn:?} generated_us={:?} generation_and_mesh_ms={} mesh_ms={} sections={} nonempty={} vertices={} bytes={}",
@@ -1140,7 +1146,7 @@ impl HorizonClientWorld {
     fn refresh_meshes(
         &mut self,
         assets: &BakedAssetRegistry,
-        meshes: &mut BTreeMap<(Key, i32), Vec<TerrainVertex>>,
+        meshes: &mut BTreeMap<(Key, i32), SectionMesh>,
         center: Key,
         eye_y: f64,
         budget: usize,
@@ -1170,7 +1176,14 @@ impl HorizonClientWorld {
             if mesh.is_empty() {
                 meshes.remove(&(key, section));
             } else {
-                meshes.insert((key, section), mesh);
+                meshes.insert(
+                    (key, section),
+                    SectionMesh {
+                        vertices: mesh,
+                        #[cfg(feature = "vanilla")]
+                        revision: self.mesh_generations,
+                    },
+                );
             }
             self.chunks
                 .get_mut(&key)
@@ -1180,6 +1193,12 @@ impl HorizonClientWorld {
         }
         rebuilt
     }
+}
+
+struct SectionMesh {
+    vertices: Vec<TerrainVertex>,
+    #[cfg(feature = "vanilla")]
+    revision: u64,
 }
 
 #[cfg(not(feature = "vanilla"))]
@@ -2310,7 +2329,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         player.position.y,
         initial_budget,
     );
-    let initial_vertices: usize = column_meshes.values().map(Vec::len).sum();
+    let initial_vertices: usize = column_meshes.values().map(|mesh| mesh.vertices.len()).sum();
     if !cfg!(feature = "vanilla") && initial_vertices == 0 {
         log_line("FAIL Initial multi-chunk mesh is empty");
         return 3;
@@ -2807,6 +2826,23 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         "PASS wgpu-hal RenderPipeline, D2Array Texture ({} layers), Depth24Plus, Buffers, and BindGroup ready",
         layer_count
     ));
+    #[cfg(feature = "render-diagnostics")]
+    {
+        let mut mismatches = 0;
+        let mut first_error = None;
+        for (layer, expected) in assets.texture_layers.iter().enumerate() {
+            let mut actual = [0u8; 1024];
+            let (status, error) =
+                device.diagnostic_atlas_layer(&atlas_texture, layer as i32, &mut actual);
+            if actual.as_slice() != expected || status != 0x8cd5 || error != 0 {
+                mismatches += 1;
+                first_error.get_or_insert((layer, status, error));
+            }
+        }
+        log_line(&format!(
+            "GLES_ATLAS layers={layer_count} mismatches={mismatches} first_error={first_error:x?}"
+        ));
+    }
 
     // 6. Spawn background 20 TPS "Server thread"
     let running = Arc::new(AtomicBool::new(true));
@@ -2868,7 +2904,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
     let mut interval_total_us = 0;
     let mut max_upload_us = 0;
     let mut max_upload_bytes = 0;
-    let mut upload_limited_frames = 0u64;
+    #[cfg(feature = "vanilla")]
+    let mut gpu_sections = mesh_upload::SectionUploads::default();
     let mut peak_mesh_bytes = 0;
 
     loop {
@@ -3138,7 +3175,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 peak_mesh_bytes = peak_mesh_bytes.max(
                     column_meshes
                         .values()
-                        .map(|mesh| mesh.capacity() * std::mem::size_of::<TerrainVertex>())
+                        .map(|mesh| mesh.vertices.capacity() * std::mem::size_of::<TerrainVertex>())
                         .sum::<usize>(),
                 );
             }
@@ -3204,30 +3241,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         frame_vertices.clear();
         #[cfg(not(feature = "vanilla"))]
         for mesh in column_meshes.values() {
-            frame_vertices.extend_from_slice(mesh);
-        }
-        #[cfg(feature = "vanilla")]
-        {
-            let center = player_chunk(player.position);
-            let eye_section = (cam_y.floor() as i32 - MIN_Y).div_euclid(MESH_HEIGHT);
-            let mut visible: Vec<_> = column_meshes
-                .iter()
-                .filter(|(key, _)| section_visible(vp, **key))
-                .collect();
-            visible.sort_unstable_by_key(|&(&((x, z), sy), _)| {
-                (x - center.0).abs() + (z - center.1).abs() + (sy - eye_section).abs()
-            });
-            let capacity = (MAX_VERTEX_BUFFER_BYTES as usize - 64 * 1024)
-                / std::mem::size_of::<TerrainVertex>();
-            let mut limited = false;
-            for (_, mesh) in visible {
-                if frame_vertices.len() + mesh.len() <= capacity {
-                    frame_vertices.extend_from_slice(mesh);
-                } else {
-                    limited = true;
-                }
-            }
-            upload_limited_frames += u64::from(limited);
+            frame_vertices.extend_from_slice(&mesh.vertices);
         }
         if let Some(hit) = targeted_hit {
             append_target_highlight(&mut frame_vertices, hit.block, assets.white_layer);
@@ -3303,6 +3317,24 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             vertex_count = frame_vertices.len() as u32;
         }
 
+        #[cfg(feature = "vanilla")]
+        let section_copy = match unsafe {
+            gpu_sections.stage(
+                &device,
+                &column_meshes,
+                &mut frame_staging,
+                player_chunk(player.position),
+                (cam_y.floor() as i32 - MIN_Y).div_euclid(MESH_HEIGHT),
+            )
+        } {
+            Ok(copy) => copy,
+            Err(e) => {
+                log_line(&format!("FAIL Section upload allocation: {e:?}"));
+                result = 17;
+                break;
+            }
+        };
+
         unsafe {
             let upload_start = Instant::now();
             if let Err(e) = write_staging_bytes(&device, &staging_buffer, &frame_staging) {
@@ -3361,6 +3393,14 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                     std::iter::once(copy),
                 );
             }
+            #[cfg(feature = "vanilla")]
+            if let Some((key, copy)) = section_copy {
+                encoder.copy_buffer_to_buffer(
+                    &staging_buffer,
+                    &gpu_sections.buffer(key),
+                    std::iter::once(copy),
+                );
+            }
 
             let color = ColorAttachment {
                 target: Attachment {
@@ -3407,6 +3447,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
 
             encoder.set_render_pipeline(&render_pipeline);
             encoder.set_bind_group(&pipeline_layout, 0, &bind_group, &[]);
+            #[cfg(feature = "vanilla")]
+            gpu_sections.draw(&mut encoder, vp);
             encoder.set_vertex_buffer(0, BufferBinding::new_unchecked(&vertex_buffer, 0, None));
             if world_end > 0 {
                 encoder.draw(0, world_end, 0, 1);
@@ -3442,6 +3484,15 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 .expect("queue.submit(frame)");
             fence_value += 1;
 
+            #[cfg(feature = "render-diagnostics")]
+            if matches!(frames_rendered, 0 | 179) {
+                if let Some((center, hotbar, terrain, error)) = surface.diagnostic_frame(&device) {
+                    log_line(&format!(
+                        "GLES_PIXELS frame={} center={center:?} hotbar={hotbar:?} terrain={terrain:?} error=0x{error:x}",
+                        frames_rendered + 1
+                    ));
+                }
+            }
             if let Err(e) = queue.present(&surface, acquired.texture) {
                 log_line(&format!("FAIL queue.present failed: {e:?}"));
                 device.destroy_texture_view(frame_view);
@@ -3487,8 +3538,12 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         "FRAME_TIMING max_interval_us={max_frame_us} intervals_over_33ms={slow_frames} max_column_mesh_us={max_mesh_us} interval_samples={interval_samples} interval_total_us={interval_total_us}"
     ));
     log_line(&format!(
-        "UPLOAD max_staging_write_us={max_upload_us} max_staging_bytes={max_upload_bytes} limited_frames={upload_limited_frames} peak_cpu_mesh_bytes={peak_mesh_bytes}"
+        "UPLOAD max_staging_write_us={max_upload_us} max_staging_bytes={max_upload_bytes} peak_cpu_mesh_bytes={peak_mesh_bytes}"
     ));
+    #[cfg(feature = "vanilla")]
+    unsafe {
+        gpu_sections.shutdown(&device)
+    };
     #[cfg(feature = "vanilla")]
     unsafe {
         horizon_memory_report()

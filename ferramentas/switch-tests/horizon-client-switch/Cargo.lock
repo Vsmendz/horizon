@@ -339,11 +339,13 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "glam",
+ "glow",
  "horizon-assets",
  "horizon-client-core",
  "horizon-core",
  "horizon-items",
  "horizon-world",
+ "khronos-egl",
  "libc",
  "naga",
  "png",

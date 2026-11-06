@@ -14,6 +14,7 @@ panic = "abort"
 
 [features]
 vanilla = []
+render-diagnostics = ["vanilla"]
 
 [patch.crates-io]
 libc = { path = "../vendor/libc" }
@@ -37,3 +38,7 @@ serde_json = { version = "1.0.151", features = ["raw_value"] }
 
 [target.'cfg(not(target_os = "horizon"))'.dependencies]
 wgpu-hal = { path = "../vendor/wgpu-hal", features = ["khronos-egl", "wayland-sys", "libloading"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+glow = "0.17"
+khronos-egl = { version = "6", features = ["dynamic"] }
