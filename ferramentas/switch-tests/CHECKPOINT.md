@@ -64,3 +64,9 @@ The existing host render smoke test can now build the Switch test crate on Linux
 - NRO artifact ready for physical hardware validation: `ferramentas/switch-tests/out/test8_vanilla_streaming.nro` (57,885,357 bytes, SHA-256 `106db3017167533a076c0c781f98cafa809767cea44ed8e9ab4876eef9f3fc72`).
 - Deployment: `nxlink -a <SWITCH_IP> ferramentas/switch-tests/out/test8_vanilla_streaming.nro`. Log written to `sdmc:/switch/horizon-tests/test8_vanilla_streaming.log`.
 - Status: Awaiting physical validation on Nintendo Switch. Performance follow-up: investigate the ~60s cold initialization time observed during table loading and deserialization.
+
+Test 8B is ready for physical diagnostics. The Linux GLES test passed with the real WGSL, a synthetic 42-layer atlas and a separate overlay draw. The black pixels were not reproduced. The NRO records readback for the actual atlas and swapchain on Switch. It also uploads terrain sections incrementally to resident buffers, using the 6 MiB budget for staging. The next hardware run should capture the SD log and confirm the terrain and hotbar visually.
+
+- Artifact `out/test8b_vanilla_render_fix.nro`, SHA-256 `628a399b73905d7c4b70f82f3b2ada639fb519d17be9c4fe08f68ad65a6af540`. All 14 previous NRO hashes verified. The 8B RomFS matches Test 8 byte for byte.
+- Host tests are in `out/test8b.gles.log` (24 passed, two ignored) and `out/test8b.legacy.log` (14 passed, one ignored). Detailed WSL timing data is in `out/test8b.block-tables.log`. The console needs its own substage timings before changing the loader.
+- Run the uploader without its log callback and retrieve `sdmc:/switch/horizon-tests/test8b_vanilla_render_fix.log`. See `REPORT.md` for commands and diagnostics.

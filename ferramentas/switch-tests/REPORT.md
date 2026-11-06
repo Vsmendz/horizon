@@ -379,7 +379,7 @@ Connects the validated Minecraft Java 26.3 vanilla generator (`OverworldGenerato
 Key architectural points:
 - **Full vanilla world height**: Y = -64 through 319 (384 blocks total height, 24 vertical 16-block sections per chunk column).
 - **Asynchronous worker**: Terrain generation (`vanilla::generate`), serialization/deserialization, and Anvil region I/O run in a background worker thread with 4 MiB stack (`"Switch chunk storage"`), preventing main render loop stalls during chunk transitions.
-- **Section-based meshing**: Mesh generation is budgeted per section (16 blocks vertical height) with frustum culling and opaque occluding section culling. Meshes are uploaded incrementally without blocking frame presentation.
+- **Section-based meshing**: Mesh generation is budgeted per 16-block section with frustum and opaque-face culling. The original Test 8 repacked visible sections each frame and skipped any that exceeded its staging capacity.
 - **Local generator execution**: Runs 100% locally on the Nintendo Switch AArch64 hardware using the embedded RomFS asset and data bundle (1,669 files, 44 MiB). No server or external PC required.
 - **Deterministic seed & reference parity**: Fixed seed 12345, verified offline against the Test 7 Java reference fingerprints for blocks and biomes across all 24 sections.
 - **Experimental isolated save**: Saves to `sdmc:/switch/horizon/saves/switch_vanilla_test8/`, keeping previous prototype saves (`switch_streaming_v1/`) completely intact.
@@ -401,4 +401,27 @@ How to deploy:
 source ferramentas/env.sh
 ferramentas/devkitpro/tools/bin/nxlink -a <SWITCH_IP> ferramentas/switch-tests/out/test8_vanilla_streaming.nro
 ```
+
+## Test 8B — GLES diagnostics and section uploads
+
+The offscreen test runs the client WGSL through Naga's GLES backend and draws with Mesa llvmpipe. It exercises the production vertex layout, a 42-layer RGBA8 atlas uploaded from a mapped pixel unpack buffer, UV selection, nearest sampling, depth testing, back-face culling, and an overlay draw after clearing depth. The client uses non-indexed triangles. The test read `[32, 192, 64, 255]` for solid color, `[200, 100, 40, 255]` for the unlit texture, `[100, 50, 20, 255]` for lit terrain, and `[255, 255, 255, 255]` for the HUD's white layer. The Linux test uses a synthetic scene and direct GLES calls. Its passing pixels leave the Switch-specific source of black pixels unresolved.
+
+The diagnostic NRO reads back all 42 actual atlas layers and compares their bytes against the decoded source. `GLES_ATLAS` reports the number of mismatches and the first affected layer, framebuffer status and GL error. `GLES_PIXELS` samples the swapchain before presentation on frames 1 and 180. The samples cover the center, hotbar region and lower scene. Together these distinguish atlas corruption from the rendered framebuffer and the subsequent presentation step.
+
+The client now keeps uploaded terrain buffers per section and queues the nearest pending revision. The 6 MiB limit applies to staging for the frame, with larger sections resuming on the next frame. Complete sections draw directly from resident buffers, and leaving the 3×3 resident window releases those buffers. Until a replacement finishes uploading, its section can be briefly absent. The old path could omit visible sections every frame if they did not fit the staging budget.
+
+- Offline validation passed with 24 client tests and two ignored tests. The legacy streaming suite passed with 14 tests and one ignored. The opt-in block-table timing test passed separately.
+- Rust release and AArch64 link passed. The ELF has zero undefined symbols and no dynamic dependencies. NRO and ASET bounds passed, and the RomFS is byte-identical to Test 8. All 14 prior NRO hashes match.
+- `out/test8b_vanilla_render_fix.nro` is 57,909,933 bytes. SHA-256 `628a399b73905d7c4b70f82f3b2ada639fb519d17be9c4fe08f68ad65a6af540`.
+- Diagnostic and test sources are `horizon-client-switch/src/pixel_test.rs`, `mesh_upload.rs`, `lib.rs`, `block_table_probe.rs`, and `vendor/wgpu-hal/src/gles/horizon_egl.rs`. The build target is registered in `build.py`.
+
+```sh
+source ferramentas/env.sh
+CARGO_NET_OFFLINE=true python3 ferramentas/switch-tests/build.py test8b_vanilla_render_fix
+ferramentas/devkitpro/tools/bin/nxlink -a <SWITCH_IP> ferramentas/switch-tests/out/test8b_vanilla_render_fix.nro
+```
+
+On Switch, wait for the world to render, look at the ground and hotbar, cross a chunk border, and exit with PLUS. Copy `sdmc:/switch/horizon-tests/test8b_vanilla_render_fix.log` back to the project. The build uses the Test 8 experimental save.
+
+The WSL timing probe read the collision, property and support tables in 33, 51 and 32 ms respectively. NBT decoding plus registry validation took 52, 91 and 48 ms. Constructing the collision table from the decoded data took 8 ms. The three files total 21,818,500 bytes. The timings are from the host and do not attribute the 55.7 seconds observed on Switch. Keep the table validation and data intact until equivalent on-device measurements separate I/O, decoding and runtime table construction.
 

@@ -210,7 +210,7 @@
       "test": "test8_vanilla_streaming",
       "build": "passed",
       "link": "passed",
-      "hardware": "awaiting_hardware_validation",
+      "hardware": "user_confirmed_rendering_issue",
       "bytes": 57885357,
       "sha256": "106db3017167533a076c0c781f98cafa809767cea44ed8e9ab4876eef9f3fc72",
       "file": "ferramentas/switch-tests/out/test8_vanilla_streaming.nro",
@@ -223,6 +223,21 @@
       "runtime_log": "sdmc:/switch/horizon-tests/test8_vanilla_streaming.log",
       "save_directory": "sdmc:/switch/horizon/saves/switch_vanilla_test8/",
       "notes": "Integrates full vanilla Minecraft Java 26.3 generator (data_version=5023, seed=12345, Y -64..319, 24 sections) with asynchronous chunk streaming worker, GLES rendering via wgpu-hal, first-person camera, collisions, raycast block breaking/placing, hotbar, and persistence."
+    },
+    {
+      "test": "test8b_vanilla_render_fix",
+      "build": "passed",
+      "link": "passed",
+      "hardware": "pending",
+      "file": "ferramentas/switch-tests/out/test8b_vanilla_render_fix.nro",
+      "bytes": 57909933,
+      "sha256": "628a399b73905d7c4b70f82f3b2ada639fb519d17be9c4fe08f68ad65a6af540",
+      "elf": "ferramentas/switch-tests/out/test8b_vanilla_render_fix.elf",
+      "elf_sha256": "cf428faa0d45cd13462b21a53ed57ba57a2caf5dca49143c006174c4c19d0062",
+      "build_log": "ferramentas/switch-tests/out/test8b_vanilla_render_fix.build.log",
+      "offline_log": "ferramentas/switch-tests/out/test8b_vanilla_render_fix.offline.log",
+      "test_log": "ferramentas/switch-tests/out/test8b.gles.log",
+      "runtime_log": "sdmc:/switch/horizon-tests/test8b_vanilla_render_fix.log"
     }
   ]
 }
