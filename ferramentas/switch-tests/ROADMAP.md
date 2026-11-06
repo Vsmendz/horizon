@@ -9,7 +9,7 @@
 | Automatic nxlink log capture with SD fallback | Deferred | Test 6C ran on hardware. Callback unreachable. Use SD logs for subsequent tests |
 | Vanilla generator resource audit | Completed offline | The existing 51-file RomFS contains render assets. The generator additionally requires the matching block registry and worldgen bundle, which this checkout lacks |
 | Isolated vanilla terrain | Hardware confirmed | Test 7. Matched Java 26.3 reference, heightmaps, NBT and determinism on physical Switch |
-| Vanilla terrain in the playable client | Offline validated; awaiting hardware | Test 8. Integrates vanilla 26.3 worldgen (Y -64..319, 24 sections) with async streaming worker; experimental save switch_vanilla_test8 |
+| Vanilla terrain in the playable client | Hardware rendering issue | Test 8 showed black terrain. Host checks passed, and the cause is still under investigation |
 | Singleplayer mechanics and essential interfaces | Pending | Extend the validated world and connect the original player, inventory, crafting and menu systems |
 | Entities, audio and performance tuning | Pending | Establish resource budgets from hardware measurements |
 
