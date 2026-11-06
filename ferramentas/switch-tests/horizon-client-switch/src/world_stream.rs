@@ -700,7 +700,20 @@ impl HorizonClientWorld {
     }
 
     fn invalidate_neighbors(&mut self, (x, z): Key) {
-        for key in [(x - 1, z), (x + 1, z), (x, z - 1), (x, z + 1)] {
+        for key in [
+            (x - 1, z),
+            (x + 1, z),
+            (x, z - 1),
+            (x, z + 1),
+            #[cfg(feature = "vanilla-water")]
+            (x - 1, z - 1),
+            #[cfg(feature = "vanilla-water")]
+            (x - 1, z + 1),
+            #[cfg(feature = "vanilla-water")]
+            (x + 1, z - 1),
+            #[cfg(feature = "vanilla-water")]
+            (x + 1, z + 1),
+        ] {
             if let Some(col) = self.chunks.get_mut(&key) {
                 #[cfg(feature = "vanilla")]
                 {
@@ -773,9 +786,24 @@ impl HorizonClientWorld {
                 ((key.0 + 1, key.1), x == 15),
                 ((key.0, key.1 - 1), z == 0),
                 ((key.0, key.1 + 1), z == 15),
+                #[cfg(feature = "vanilla-water")]
+                ((key.0 - 1, key.1 - 1), x == 0 && z == 0),
+                #[cfg(feature = "vanilla-water")]
+                ((key.0 - 1, key.1 + 1), x == 0 && z == 15),
+                #[cfg(feature = "vanilla-water")]
+                ((key.0 + 1, key.1 - 1), x == 15 && z == 0),
+                #[cfg(feature = "vanilla-water")]
+                ((key.0 + 1, key.1 + 1), x == 15 && z == 15),
             ] {
                 if edge && let Some(col) = self.chunks.get_mut(&neighbor) {
-                    col.dirty_sections |= 1 << section;
+                    #[cfg(feature = "vanilla-water")]
+                    {
+                        col.dirty_sections |= dirty;
+                    }
+                    #[cfg(not(feature = "vanilla-water"))]
+                    {
+                        col.dirty_sections |= 1 << section;
+                    }
                 }
             }
         }
@@ -1029,13 +1057,35 @@ mod vanilla_tests {
         );
 
         let edit = BlockPos::new(-17, -49, 63);
+        #[cfg(feature = "vanilla-water")]
+        let fluid_cells =
+            [(0, 8, false), (5, 3, false), (12, 8, true)].map(|(level, amount, falling)| {
+                let pos = edit.offset(-1 - level / 4, 0, 0);
+                let mut water = registry
+                    .state(vanilla.state(VoxelBlock::Water))
+                    .unwrap()
+                    .clone();
+                water.properties.insert("level".into(), level.to_string());
+                let id = registry.id(&water).unwrap();
+                world.chunks.get_mut(&key).unwrap().set(pos, id).unwrap();
+                (pos, id, amount, falling)
+            });
         let adjacent = (-1, 3);
         for col in world.chunks.values_mut() {
             col.dirty_sections = 0;
         }
         assert!(world.set_block(edit, VoxelBlock::GoldBlock));
         assert_eq!(world.chunks[&key].dirty_sections, 0b11);
-        assert_eq!(world.chunks[&adjacent].dirty_sections, 1);
+        #[cfg(feature = "vanilla-water")]
+        assert_eq!(world.chunks[&(key.0 + 1, key.1 + 1)].dirty_sections, 0b11);
+        assert_eq!(
+            world.chunks[&adjacent].dirty_sections,
+            if cfg!(feature = "vanilla-water") {
+                0b11
+            } else {
+                1
+            }
+        );
         let player = (Vec3::new(-20.5, -21.0, 60.5), 25.0, -8.0, 3);
         worker.request_save(&world, player)?;
         assert!(world.set_block(edit, VoxelBlock::SeaLantern));
@@ -1056,6 +1106,13 @@ mod vanilla_tests {
         let prepared = await_stream(&mut worker)?;
         assert_eq!(world.apply_stream(prepared).unwrap().read, 1);
         assert_eq!(world.get_block(edit), VoxelBlock::SeaLantern);
+        #[cfg(feature = "vanilla-water")]
+        for (pos, id, amount, falling) in fluid_cells {
+            assert_eq!(world.state_at(pos), Some(id));
+            let fluid = vanilla.fluids.get(id).unwrap();
+            assert_eq!(fluid.amount(), amount);
+            assert_eq!(fluid.falling(), falling);
+        }
         let after = &world.chunks[&key];
         for i in 0..SECTIONS {
             assert_eq!(before.biomes.section(i), after.biomes.section(i));

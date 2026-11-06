@@ -27,7 +27,8 @@ is_integration=name=="test3_horizon_integration"
 is_renderer=name=="test4_horizon_renderer"
 is_worldgen=name=="test7_vanilla_worldgen"
 is_diagnostic=name in ("test8b_vanilla_render_fix", "test8c_gles_pipeline_probe", "test8d_gles_atlas_probe", "test8e_gles_atlas_fix")
-is_vanilla=name=="test8_vanilla_streaming" or is_diagnostic
+has_water=name=="test8f_vanilla_water_fix"
+is_vanilla=name=="test8_vanilla_streaming" or is_diagnostic or has_water
 is_client=name in (
     "test5_horizon_client", "test5b_horizon_client_fix",
     "test6_horizon_streaming", "test6b_horizon_streaming_async",
@@ -37,6 +38,7 @@ is_client=name in (
     "test8c_gles_pipeline_probe",
     "test8d_gles_atlas_probe",
     "test8e_gles_atlas_fix",
+    "test8f_vanilla_water_fix",
 )
 is_rust=name in ("test2a_rust", "test2b_rust_egl") or is_std or is_integration or is_renderer or is_client or is_worldgen
 is_c=name=="test2c_posix_c" or is_rust
@@ -52,13 +54,14 @@ if has_network_log: flags += ["-DHORIZON_NXLINK_LOG"]
 obj=build/(name+".o"); elf=build/(name+".elf")
 source=src/("client_entry.c" if is_client or is_worldgen else "renderer_entry.c" if is_renderer else "horizon_entry.c" if is_integration else "std_entry.c" if is_std else "rust_entry.c" if is_rust else name+(".c" if is_c else ".cpp"))
 extra=[]
+stage=out/("test8f-romfs" if has_water else "test8-romfs")
 if is_renderer or is_client:
-    run([sys.executable, src/"prepare_switch_assets.py", *(["--vanilla"] if is_vanilla else [])])
+    asset_args=["--vanilla-water"] if has_water else ["--vanilla"] if is_vanilla else []
+    run([sys.executable, src/"prepare_switch_assets.py", *asset_args])
 if is_vanilla:
     source_bundle=out/"test7-worldgen-romfs"
     if not (source_bundle/"worldgen/block_flags.json").is_file():
         raise SystemExit("Prepare the 26.3 worldgen bundle with prepare_worldgen_probe.py first")
-    stage=out/"test8-romfs"
     for file in ("facts.json", "block-behaviours.json"):
         shutil.copy2(source_bundle/file, stage)
     shutil.copytree(source_bundle/"worldgen", stage/"worldgen", dirs_exist_ok=True)
@@ -95,6 +98,7 @@ if is_rust:
                "-Zbuild-std-features=compiler-builtins-mem"]
         if is_vanilla: cargo+=["--features", "vanilla"]
         if is_diagnostic: cargo+=["--features", "render-diagnostics"]
+        if has_water: cargo+=["--features", "vanilla-water"]
     if is_worldgen:
         probe=src/"horizon-worldgen-switch"
         cargo=[Path.home()/".cargo/bin/cargo","--config",src/"horizon-integration/cargo-switch.toml",
@@ -126,7 +130,7 @@ run([linker,*flags,"-specs="+str(sdk/"libnx/switch.specs"),obj,*extra,
 run([sdk/"tools/bin/nacptool","--create",name,"Horizon port test","0.1.0",build/(name+".nacp")])
 nro_args=[sdk/"tools/bin/elf2nro",elf,out/(name+".nro"),"--nacp="+str(build/(name+".nacp")),"--icon="+str(sdk/"libnx/default_icon.jpg")]
 if is_vanilla:
-    nro_args.append("--romfsdir="+str(out/"test8-romfs"))
+    nro_args.append("--romfsdir="+str(stage))
 elif is_renderer or is_client:
     nro_args.append("--romfsdir="+str(src/"out/sdcard/switch/horizon"))
 if is_worldgen:

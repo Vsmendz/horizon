@@ -28,6 +28,10 @@ pub struct Vanilla {
     pub generator: OverworldGenerator,
     pub spawn: [i32; 2],
     visuals: Box<[VoxelBlock]>,
+    #[cfg(feature = "vanilla-water")]
+    pub fluids: horizon_world::fluid::FluidStateTable,
+    #[cfg(feature = "vanilla-water")]
+    pub water_colors: Box<[u32]>,
 }
 
 impl Vanilla {
@@ -83,6 +87,12 @@ impl Vanilla {
                 }
             })
             .collect();
+        #[cfg(feature = "vanilla-water")]
+        let fluids = horizon_world::fluid::FluidStateTable::new(registry)?;
+        #[cfg(feature = "vanilla-water")]
+        let water_colors = (0..data.biome_names().len())
+            .map(|id| crate::water::biome_water_color(data.biome_json(BiomeId(id as u32))))
+            .collect::<io::Result<_>>()?;
         log(&format!(
             "INIT generator_ms={} seed={SEED} min_y={MIN_Y} height={HEIGHT} sea_level={}",
             start.elapsed().as_millis(),
@@ -92,6 +102,10 @@ impl Vanilla {
             generator,
             spawn,
             visuals,
+            #[cfg(feature = "vanilla-water")]
+            fluids,
+            #[cfg(feature = "vanilla-water")]
+            water_colors,
         }))
     }
 

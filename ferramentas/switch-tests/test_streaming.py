@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory(prefix="horizon-switch-streaming-") as folder:
     crate = Path(folder)
     (crate / "Cargo.toml").write_text(
         '[package]\nname = "horizon-switch-streaming-tests"\nversion = "0.0.0"\nedition = "2024"\n'
-        '[lib]\npath = "lib.rs"\n[workspace]\n[features]\nvanilla = []\n[dev-dependencies]\n'
+        '[lib]\npath = "lib.rs"\n[workspace]\n[features]\nvanilla = []\nvanilla-water = ["vanilla"]\n[dev-dependencies]\n'
         + "".join(
             f"{name} = {{ path = {json.dumps(str(repo / 'crates' / name))} }}\n"
             for name in ("horizon-core", "horizon-world")

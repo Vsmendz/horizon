@@ -6,12 +6,15 @@ type Buffer = <GlesApi as HalApi>::Buffer;
 #[derive(Default)]
 pub(super) struct SectionUploads {
     sections: BTreeMap<SectionKey, ResidentSection>,
+    #[cfg(feature = "vanilla-water")]
+    water_order: Vec<(f32, SectionKey)>,
 }
 
 struct ResidentSection {
     revision: u64,
     buffer: Buffer,
     bytes: usize,
+    solid_vertices: u32,
     uploaded: usize,
 }
 
@@ -73,6 +76,10 @@ impl SectionUploads {
                 revision: mesh.revision,
                 buffer,
                 bytes: data.len(),
+                #[cfg(feature = "vanilla-water")]
+                solid_vertices: mesh.solid_vertices,
+                #[cfg(not(feature = "vanilla-water"))]
+                solid_vertices: mesh.vertices.len() as u32,
                 uploaded: 0,
             };
             if let Some(old) = self.sections.insert(key, section) {
@@ -100,14 +107,56 @@ impl SectionUploads {
 
     pub(super) unsafe fn draw(&self, encoder: &mut <GlesApi as HalApi>::CommandEncoder, vp: Mat4) {
         for (&key, section) in &self.sections {
-            if section.uploaded == section.bytes && section_visible(vp, key) {
+            if section.solid_vertices != 0
+                && section.uploaded == section.bytes
+                && section_visible(vp, key)
+            {
                 unsafe {
                     encoder.set_vertex_buffer(
                         0,
                         BufferBinding::new_unchecked(&section.buffer, 0, None),
                     );
-                    encoder.draw(0, (section.bytes / size_of::<TerrainVertex>()) as u32, 0, 1);
+                    encoder.draw(0, section.solid_vertices, 0, 1);
                 }
+            }
+        }
+    }
+
+    #[cfg(feature = "vanilla-water")]
+    pub(super) unsafe fn draw_water(
+        &mut self,
+        encoder: &mut <GlesApi as HalApi>::CommandEncoder,
+        vp: Mat4,
+        eye: [f32; 3],
+    ) {
+        self.water_order.clear();
+        for (&key @ ((x, z), y), section) in &self.sections {
+            if section.uploaded == section.bytes
+                && section.solid_vertices < (section.bytes / size_of::<TerrainVertex>()) as u32
+                && section_visible(vp, key)
+            {
+                let middle = [
+                    (x * 16 + 8) as f32,
+                    (MIN_Y + y * MESH_HEIGHT + 8) as f32,
+                    (z * 16 + 8) as f32,
+                ];
+                let distance = middle
+                    .into_iter()
+                    .zip(eye)
+                    .map(|(a, b)| (a - b).powi(2))
+                    .sum();
+                self.water_order.push((distance, key));
+            }
+        }
+        self.water_order
+            .sort_unstable_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        for &(_, key) in &self.water_order {
+            let section = &self.sections[&key];
+            let count = (section.bytes / size_of::<TerrainVertex>()) as u32;
+            unsafe {
+                encoder
+                    .set_vertex_buffer(0, BufferBinding::new_unchecked(&section.buffer, 0, None));
+                encoder.draw(section.solid_vertices, count - section.solid_vertices, 0, 1);
             }
         }
     }

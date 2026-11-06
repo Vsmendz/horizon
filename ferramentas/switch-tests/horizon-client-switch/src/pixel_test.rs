@@ -249,6 +249,10 @@ unsafe fn verify_pixels(gl: &glow::Context, device: &wgpu_hal::gles::Device) {
         gl.bind_sampler(0, Some(sampler));
         let mut layers = vec![0; 42 * 1024];
         layers[..4].copy_from_slice(&[88, 144, 200, 255]);
+        #[cfg(feature = "vanilla-water")]
+        for texel in layers[39 * 1024..40 * 1024].chunks_exact_mut(4) {
+            texel.copy_from_slice(&[200, 100, 40, 128]);
+        }
         for (i, texel) in layers[40 * 1024..41 * 1024].chunks_exact_mut(4).enumerate() {
             texel.copy_from_slice(if i % 16 < 8 {
                 &[200, 100, 40, 255]
@@ -440,6 +444,65 @@ unsafe fn verify_pixels(gl: &glow::Context, device: &wgpu_hal::gles::Device) {
             println!("{label}: {expected:?}");
             gl.delete_program(program);
         }
+        #[cfg(feature = "vanilla-water")]
+        {
+            let opaque = program(gl, &unlit, "fs_main");
+            let water = program(
+                gl,
+                &format!("{HORIZON_WGSL_SHADER}{}", super::WATER_WGSL),
+                "fs_water",
+            );
+            let draw = |program, layer, z| {
+                gl.use_program(Some(program));
+                let verts =
+                    [[-0.75, -0.75], [0.75, -0.75], [0.0, 0.75]].map(|[x, y]| TerrainVertex {
+                        pos: [x, y, z],
+                        normal: [0.0, 1.0, 0.0],
+                        uv_layer: [0.25, 0.25, layer],
+                        color_ao: [1.0; 4],
+                    });
+                gl.buffer_data_u8_slice(
+                    glow::ARRAY_BUFFER,
+                    bytemuck::cast_slice(&verts),
+                    glow::STREAM_DRAW,
+                );
+                gl.draw_arrays(glow::TRIANGLES, 0, 3);
+            };
+            gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+            draw(opaque, 41.0, 0.4);
+            gl.enable(glow::BLEND);
+            gl.blend_func_separate(
+                glow::SRC_ALPHA,
+                glow::ONE_MINUS_SRC_ALPHA,
+                glow::ONE,
+                glow::ONE_MINUS_SRC_ALPHA,
+            );
+            draw(water, 39.0, 0.6);
+            assert_eq!(
+                pixel(gl, 32, 32),
+                [255; 4],
+                "solid terrain hides water behind it"
+            );
+            draw(water, 39.0, 0.2);
+            let blended = pixel(gl, 32, 32);
+            assert!(
+                blended
+                    .into_iter()
+                    .zip([227u8, 177, 147, 255])
+                    .all(|(a, b)| a.abs_diff(b) <= 1),
+                "the opaque bottom remains visible through water: {blended:?}"
+            );
+            gl.disable(glow::BLEND);
+            draw(opaque, 40.0, 0.3);
+            assert_eq!(
+                pixel(gl, 32, 32),
+                blended,
+                "water writes depth like the desktop terrain pass"
+            );
+            assert_eq!(gl.get_error(), glow::NO_ERROR);
+            gl.delete_program(opaque);
+            gl.delete_program(water);
+        }
         #[cfg(feature = "render-diagnostics")]
         {
             use super::{DIAGNOSTIC_WGSL, PROBE_SKY, probe_panels, probe_texture};
@@ -465,7 +528,7 @@ unsafe fn verify_pixels(gl: &glow::Context, device: &wgpu_hal::gles::Device) {
                 1,
                 glow::RGBA,
                 glow::UNSIGNED_BYTE,
-                glow::PixelUnpackData::Slice(Some(&probe_texture())),
+                glow::PixelUnpackData::Slice(Some(&probe_texture(16))),
             );
             gl.clear_color(
                 PROBE_SKY[0] as f32,

@@ -109,11 +109,12 @@ def main() -> int:
     if manifest_sha1 not in accepted_manifests:
         raise SystemExit(f"26.3.json SHA-1 mismatch: got {manifest_sha1}")
 
-    vanilla = sys.argv[1:] == ["--vanilla"]
+    water = sys.argv[1:] == ["--vanilla-water"]
+    vanilla = water or sys.argv[1:] == ["--vanilla"]
     if sys.argv[1:] and not vanilla:
-        raise SystemExit("Usage: prepare_switch_assets.py [--vanilla]")
+        raise SystemExit("Usage: prepare_switch_assets.py [--vanilla|--vanilla-water]")
     blocks = BLOCKS + VANILLA_BLOCKS if vanilla else BLOCKS
-    out_root = (script_dir / "out" / "test8-romfs" if vanilla
+    out_root = (script_dir / "out" / ("test8f-romfs" if water else "test8-romfs") if vanilla
                 else script_dir / "out" / "sdcard" / "switch" / "horizon")
     assets_root = out_root / "assets"
     if assets_root.exists() and not vanilla:
@@ -124,6 +125,9 @@ def main() -> int:
     models_queue: list[str] = []
     visited_models: set[str] = set()
     textures_set: set[str] = set(EXTRA_TEXTURES + (["block/lava_still"] if vanilla else []))
+
+    if water:
+        textures_set.update(["block/water_flow", "block/water_overlay"])
 
     with zipfile.ZipFile(jar_path, "r") as zf:
         jar_names = set(zf.namelist())

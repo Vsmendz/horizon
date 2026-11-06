@@ -14,10 +14,14 @@ fn program(gl: &glow::Context, array: bool) -> Result<glow::Program, String> {
         (
             "sampler2DArray",
             "ivec3(0, 0, layer)",
-            "vec3(0.03125, 0.03125, float(layer))",
+            "vec3(vec2(0.5) / vec2(textureSize(atlas, 0).xy), float(layer))",
         )
     } else {
-        ("sampler2D", "ivec2(0)", "vec2(0.03125)")
+        (
+            "sampler2D",
+            "ivec2(0)",
+            "vec2(0.5) / vec2(textureSize(atlas, 0))",
+        )
     };
     let fragment = format!(
         "#version 300 es

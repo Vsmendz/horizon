@@ -15,6 +15,7 @@ panic = "abort"
 [features]
 vanilla = []
 render-diagnostics = ["vanilla"]
+vanilla-water = ["vanilla"]
 
 [patch.crates-io]
 libc = { path = "../vendor/libc" }

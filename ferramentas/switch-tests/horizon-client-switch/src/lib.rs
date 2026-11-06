@@ -22,8 +22,14 @@ mod block_palette;
 mod block_table_probe;
 #[path = "../../../../crates/horizon-client-render/src/camera.rs"]
 pub mod camera;
+#[cfg(feature = "vanilla-water")]
+#[path = "../../../../crates/horizon-client-render/src/mesher/fluid_geometry.rs"]
+mod fluid_geometry;
 #[cfg(feature = "vanilla")]
 mod mesh_upload;
+#[cfg(feature = "vanilla-water")]
+mod water;
+
 #[cfg(all(test, target_os = "linux"))]
 mod pixel_test;
 #[allow(dead_code)]
@@ -692,6 +698,21 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 "#;
 
+#[cfg(feature = "vanilla-water")]
+const WATER_WGSL: &str = r#"
+@fragment
+fn fs_water(in: VertexOutput) -> @location(0) vec4<f32> {
+    let tex = textureSample(terrain_tex, terrain_sampler, in.uv_layer.xy, i32(round(in.uv_layer.z)));
+    if (tex.a < 0.01) {
+        discard;
+    }
+    let tinted = tex.rgb * in.color_ao.rgb * in.color_ao.a;
+    let dist = distance(in.world_pos, camera.camera_pos.xyz);
+    let fog = clamp((dist - 28.0) / 44.0, 0.0, 0.72);
+    return vec4<f32>(mix(tinted, camera.sky_color.rgb, fog), tex.a);
+}
+"#;
+
 #[cfg(feature = "render-diagnostics")]
 const DIAGNOSTIC_WGSL: &str = r#"
 @fragment
@@ -706,7 +727,7 @@ fn fs_probe_sample(in: VertexOutput) -> @location(0) vec4<f32> {
 
 @fragment
 fn fs_probe_texel(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureLoad(terrain_tex, vec2<i32>(in.uv_layer.xy * 16.0), i32(round(in.uv_layer.z)), 0);
+    return textureLoad(terrain_tex, vec2<i32>(in.uv_layer.xy * vec2<f32>(textureDimensions(terrain_tex))), i32(round(in.uv_layer.z)), 0);
 }
 
 @fragment
@@ -774,10 +795,10 @@ fn probe_panels(vertices: &mut Vec<TerrainVertex>, layer: u32) {
 }
 
 #[cfg(feature = "render-diagnostics")]
-fn probe_texture() -> Vec<u8> {
-    (0..16 * 16)
+fn probe_texture(side: usize) -> Vec<u8> {
+    (0..side * side)
         .flat_map(|i| {
-            if i % 16 < 8 {
+            if i % side < side / 2 {
                 [224, 64, 32, 255]
             } else {
                 [32, 192, 224, 255]
@@ -824,9 +845,18 @@ struct AnimatedLayer {
     current_frame: usize,
 }
 
+const ATLAS_SIDE: u32 = if cfg!(feature = "vanilla-water") {
+    32
+} else {
+    16
+};
+const ATLAS_LAYER_BYTES: usize = (ATLAS_SIDE * ATLAS_SIDE * 4) as usize;
+
 pub struct BakedAssetRegistry {
     source_label: String,
     texture_layers: Vec<Vec<u8>>,
+    #[cfg(feature = "vanilla-water")]
+    water_layers: [u32; 3],
     sprite_to_layer: BTreeMap<String, u32>,
     baked_quads: BTreeMap<VoxelBlock, Vec<ModelQuad>>,
     animations: Vec<AnimatedLayer>,
@@ -981,11 +1011,24 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
         let png_path = root.join(format!("assets/minecraft/textures/{tex_rel}.png"));
         let png_bytes =
             fs::read(&png_path).map_err(|e| format!("read {}: {e}", png_path.display()))?;
-        let (side, frames) = decode_png_frames(&png_bytes)?;
-        if side != 16 {
+        let (side, mut frames) = decode_png_frames(&png_bytes)?;
+        if side != 16 && side != ATLAS_SIDE {
             return Err(format!(
-                "Expected 16x16 texture for {tex_rel}, got {side}x{side}"
+                "Unsupported texture dimensions for {tex_rel}: {side}x{side}"
             ));
+        }
+
+        if side != ATLAS_SIDE {
+            for frame in &mut frames {
+                *frame = (0..ATLAS_SIDE * ATLAS_SIDE)
+                    .flat_map(|pixel| {
+                        let x = (pixel % ATLAS_SIDE) * side / ATLAS_SIDE;
+                        let y = (pixel / ATLAS_SIDE) * side / ATLAS_SIDE;
+                        let i = ((y * side + x) * 4) as usize;
+                        <[u8; 4]>::try_from(&frame[i..i + 4]).unwrap()
+                    })
+                    .collect();
+            }
         }
 
         let mcmeta_path = root.join(format!("assets/minecraft/textures/{tex_rel}.png.mcmeta"));
@@ -1016,7 +1059,7 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
 
     // Add pure white 16x16 layer for HUD crosshair, hotbar frame, and block target highlight
     let white_layer = texture_layers.len() as u32;
-    texture_layers.push(vec![255u8; 16 * 16 * 4]);
+    texture_layers.push(vec![255u8; ATLAS_LAYER_BYTES]);
     sprite_to_layer.insert("horizon:ui/white".to_string(), white_layer);
 
     let mut models_map = BTreeMap::new();
@@ -1090,6 +1133,15 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
         baked_quads.insert(block, quads);
     }
 
+    #[cfg(feature = "vanilla-water")]
+    let water_layers = ["water_still", "water_flow", "water_overlay"].map(|name| {
+        sprite_to_layer
+            .get(&format!("minecraft:block/{name}"))
+            .copied()
+            .ok_or_else(|| format!("missing fluid sprite {name}"))
+    });
+    #[cfg(feature = "vanilla-water")]
+    let [still, flow, overlay] = water_layers;
     Ok(BakedAssetRegistry {
         source_label: format!(
             "{} (26.3 jar sha1={}..)",
@@ -1097,6 +1149,8 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
             &manifest.client_jar_sha1[..12]
         ),
         texture_layers,
+        #[cfg(feature = "vanilla-water")]
+        water_layers: [still?, flow?, overlay?],
         sprite_to_layer,
         baked_quads,
         animations,
@@ -1107,8 +1161,34 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
 #[cfg(all(test, feature = "vanilla"))]
 #[test]
 fn vanilla_romfs_bakes_models_and_meshes_the_spawn() -> Result<(), Box<dyn std::error::Error>> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../out/test8-romfs");
+    let stage = if cfg!(feature = "vanilla-water") {
+        "../out/test8f-romfs"
+    } else {
+        "../out/test8-romfs"
+    };
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(stage);
     let assets = bake_assets(root.display().to_string())?;
+    #[cfg(feature = "vanilla-water")]
+    {
+        let [still, flow, _] = assets.water_layers;
+        assert!(
+            assets.texture_layers[still as usize]
+                .chunks_exact(4)
+                .any(|p| (1..255).contains(&p[3]))
+        );
+        let animation = assets
+            .animations
+            .iter()
+            .find(|a| a.layer_index == flow)
+            .unwrap();
+        assert!(animation.frames.windows(2).any(|pair| pair[0] != pair[1]));
+        assert!(
+            animation
+                .frames
+                .iter()
+                .all(|frame| frame.len() == 32 * 32 * 4)
+        );
+    }
     assert!(assets.baked_quads.contains_key(&VoxelBlock::Deepslate));
     assert!(
         assets
@@ -1165,15 +1245,23 @@ impl HorizonClientWorld {
         &self,
         ((cx, cz), section): (Key, i32),
         assets: &BakedAssetRegistry,
-    ) -> Vec<TerrainVertex> {
-        let mut vertices = Vec::new();
+    ) -> SectionMesh {
+        let mut mesh = SectionMesh {
+            vertices: Vec::new(),
+            #[cfg(feature = "vanilla")]
+            revision: self.mesh_generations,
+            #[cfg(feature = "vanilla-water")]
+            solid_vertices: 0,
+        };
+        #[cfg(feature = "vanilla-water")]
+        let mut translucent = Vec::new();
         #[cfg(feature = "vanilla")]
         if !self.chunks[&(cx, cz)]
             .terrain
             .section(section as usize)
             .is_some_and(|blocks| blocks.any_state(|id| self.vanilla.visual(id) != VoxelBlock::Air))
         {
-            return vertices;
+            return mesh;
         }
         #[cfg(feature = "vanilla")]
         {
@@ -1194,14 +1282,34 @@ impl HorizonClientWorld {
                     .into_iter()
                     .all(|key| opaque(key, section))
             {
-                return vertices;
+                return mesh;
             }
         }
         let bottom = MIN_Y + section * MESH_HEIGHT;
+        #[cfg(feature = "vanilla-water")]
+        let column = &self.chunks[&(cx, cz)];
         for y in bottom..bottom + MESH_HEIGHT {
             for z in cz * 16..cz * 16 + 16 {
                 for x in cx * 16..cx * 16 + 16 {
-                    let block = self.get_block(BlockPos::new(x, y, z));
+                    let pos = BlockPos::new(x, y, z);
+                    #[cfg(not(feature = "vanilla-water"))]
+                    let block = self.get_block(pos);
+                    #[cfg(feature = "vanilla-water")]
+                    let id = column.get(x & 15, y, z & 15);
+                    #[cfg(feature = "vanilla-water")]
+                    let block = self.vanilla.visual(id);
+                    #[cfg(feature = "vanilla-water")]
+                    {
+                        if block != VoxelBlock::Air
+                            && !block.is_opaque()
+                            && self.vanilla.fluids.get(id).is_some_and(water::is_water)
+                        {
+                            water::append(self, assets, pos, &mut translucent);
+                        }
+                        if block == VoxelBlock::Water {
+                            continue;
+                        }
+                    }
                     if block == VoxelBlock::Air {
                         continue;
                     }
@@ -1261,7 +1369,7 @@ impl HorizonClientWorld {
                         for &vi in &[0usize, 1, 2, 0, 2, 3] {
                             let p = quad.positions[vi];
                             let uv = quad.uv[vi];
-                            vertices.push(TerrainVertex {
+                            mesh.vertices.push(TerrainVertex {
                                 pos: [origin[0] + p[0], origin[1] + p[1], origin[2] + p[2]],
                                 normal,
                                 uv_layer: [uv[0], uv[1], layer],
@@ -1272,7 +1380,12 @@ impl HorizonClientWorld {
                 }
             }
         }
-        vertices
+        #[cfg(feature = "vanilla-water")]
+        {
+            mesh.solid_vertices = mesh.vertices.len() as u32;
+            mesh.vertices.append(&mut translucent);
+        }
+        mesh
     }
 
     fn refresh_meshes(
@@ -1305,17 +1418,10 @@ impl HorizonClientWorld {
         let rebuilt = dirty.len().min(budget);
         for (key, section) in dirty.into_iter().take(budget) {
             let mesh = self.mesh_section((key, section), assets);
-            if mesh.is_empty() {
+            if mesh.vertices.is_empty() {
                 meshes.remove(&(key, section));
             } else {
-                meshes.insert(
-                    (key, section),
-                    SectionMesh {
-                        vertices: mesh,
-                        #[cfg(feature = "vanilla")]
-                        revision: self.mesh_generations,
-                    },
-                );
+                meshes.insert((key, section), mesh);
             }
             self.chunks
                 .get_mut(&key)
@@ -1329,6 +1435,8 @@ impl HorizonClientWorld {
 
 struct SectionMesh {
     vertices: Vec<TerrainVertex>,
+    #[cfg(feature = "vanilla-water")]
+    solid_vertices: u32,
     #[cfg(feature = "vanilla")]
     revision: u64,
 }
@@ -2568,10 +2676,14 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
     }
 
     // 5. Parse WGSL via Naga and create `wgpu-hal` ShaderModule, Pipeline, Textures, Buffers, BindGroup
-    #[cfg(feature = "render-diagnostics")]
-    let wgsl = format!("{HORIZON_WGSL_SHADER}{DIAGNOSTIC_WGSL}");
-    #[cfg(not(feature = "render-diagnostics"))]
-    let wgsl = HORIZON_WGSL_SHADER;
+    let wgsl = [
+        HORIZON_WGSL_SHADER,
+        #[cfg(feature = "vanilla-water")]
+        WATER_WGSL,
+        #[cfg(feature = "render-diagnostics")]
+        DIAGNOSTIC_WGSL,
+    ]
+    .concat();
     let naga_module = match naga::front::wgsl::parse_str(wgsl.as_ref()) {
         Ok(m) => m,
         Err(e) => {
@@ -2694,7 +2806,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
     })];
     let pipeline_constants = naga::back::PipelineConstants::default();
 
-    let make_pipeline = |label, vertex_entry, fragment_entry| unsafe {
+    let make_pipeline = |label, vertex_entry, fragment_entry, blend| unsafe {
         device
             .create_render_pipeline(&RenderPipelineDescriptor {
                 label: Some(label),
@@ -2733,7 +2845,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 }),
                 color_targets: &[Some(wgpu_types::ColorTargetState {
                     format: surface_format,
-                    blend: None,
+                    blend,
                     write_mask: wgpu_types::ColorWrites::ALL,
                 })],
                 multiview_mask: None,
@@ -2741,14 +2853,21 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             })
             .expect("create_render_pipeline")
     };
-    let render_pipeline = make_pipeline("horizon_client_pipeline", "vs_main", "fs_main");
-    let hand_pipeline = make_pipeline("horizon_hand_pipeline", "vs_hand", "fs_hand");
+    let render_pipeline = make_pipeline("horizon_client_pipeline", "vs_main", "fs_main", None);
+    let hand_pipeline = make_pipeline("horizon_hand_pipeline", "vs_hand", "fs_hand", None);
+    #[cfg(feature = "vanilla-water")]
+    let water_pipeline = make_pipeline(
+        "horizon water",
+        "vs_main",
+        "fs_water",
+        Some(wgpu_types::BlendState::ALPHA_BLENDING),
+    );
     #[cfg(feature = "render-diagnostics")]
     let probe_pipelines = [
-        make_pipeline("probe solid", "vs_main", "fs_probe_solid"),
-        make_pipeline("probe sampler", "vs_main", "fs_probe_sample"),
-        make_pipeline("probe direct texel", "vs_main", "fs_probe_texel"),
-        make_pipeline("probe fixed texel", "vs_main", "fs_probe_fixed_texel"),
+        make_pipeline("probe solid", "vs_main", "fs_probe_solid", None),
+        make_pipeline("probe sampler", "vs_main", "fs_probe_sample", None),
+        make_pipeline("probe direct texel", "vs_main", "fs_probe_texel", None),
+        make_pipeline("probe fixed texel", "vs_main", "fs_probe_fixed_texel", None),
     ];
 
     let layer_count = assets.texture_layers.len() as u32;
@@ -2757,8 +2876,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             .create_texture_2d_array(&TextureDescriptor {
                 label: Some(label),
                 size: wgpu_types::Extent3d {
-                    width: 16,
-                    height: 16,
+                    width: ATLAS_SIDE,
+                    height: ATLAS_SIDE,
                     depth_or_array_layers: layer_count,
                 },
                 mip_level_count: 1,
@@ -2935,8 +3054,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         tex_copies.push(BufferTextureCopy {
             buffer_layout: wgpu_types::TexelCopyBufferLayout {
                 offset,
-                bytes_per_row: Some(16 * 4),
-                rows_per_image: Some(16),
+                bytes_per_row: Some(ATLAS_SIDE * 4),
+                rows_per_image: Some(ATLAS_SIDE),
             },
             texture_base: TextureCopyBase {
                 mip_level: 0,
@@ -2945,8 +3064,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 aspect: FormatAspects::COLOR,
             },
             size: CopyExtent {
-                width: 16,
-                height: 16,
+                width: ATLAS_SIDE,
+                height: ATLAS_SIDE,
                 depth: 1,
             },
         });
@@ -2956,7 +3075,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
     let control_copy = {
         let mut copy = tex_copies[0].clone();
         copy.buffer_layout.offset = init_upload_bytes.len() as u64;
-        init_upload_bytes.extend_from_slice(&PROBE_CONTROL_TEXEL.repeat(16 * 16));
+        init_upload_bytes
+            .extend_from_slice(&PROBE_CONTROL_TEXEL.repeat((ATLAS_SIDE * ATLAS_SIDE) as usize));
         copy
     };
     if let Err(e) = unsafe { write_staging_bytes(&device, &staging_buffer, &init_upload_bytes) } {
@@ -2992,7 +3112,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         let mut mismatches = 0;
         let mut first_error = None;
         for (layer, expected) in assets.texture_layers.iter().enumerate() {
-            let mut actual = [0u8; 1024];
+            let mut actual = [0u8; ATLAS_LAYER_BYTES];
             let (status, error) =
                 device.diagnostic_atlas_layer(&atlas_texture, layer as i32, &mut actual);
             if actual.as_slice() != expected || status != 0x8cd5 || error != 0 {
@@ -3451,8 +3571,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 anim_copies.push(BufferTextureCopy {
                     buffer_layout: wgpu_types::TexelCopyBufferLayout {
                         offset,
-                        bytes_per_row: Some(16 * 4),
-                        rows_per_image: Some(16),
+                        bytes_per_row: Some(ATLAS_SIDE * 4),
+                        rows_per_image: Some(ATLAS_SIDE),
                     },
                     texture_base: TextureCopyBase {
                         mip_level: 0,
@@ -3461,8 +3581,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                         aspect: FormatAspects::COLOR,
                     },
                     size: CopyExtent {
-                        width: 16,
-                        height: 16,
+                        width: ATLAS_SIDE,
+                        height: ATLAS_SIDE,
                         depth: 1,
                     },
                 });
@@ -3473,7 +3593,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         if matches!(frames_rendered, 1 | 2) {
             let offset = frame_staging.len() as u64;
             if frames_rendered == 1 {
-                frame_staging.extend_from_slice(&probe_texture());
+                frame_staging.extend_from_slice(&probe_texture(ATLAS_SIDE as usize));
             } else {
                 frame_staging
                     .extend_from_slice(&assets.texture_layers[assets.white_layer as usize]);
@@ -3481,8 +3601,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             anim_copies.push(BufferTextureCopy {
                 buffer_layout: wgpu_types::TexelCopyBufferLayout {
                     offset,
-                    bytes_per_row: Some(64),
-                    rows_per_image: Some(16),
+                    bytes_per_row: Some(ATLAS_SIDE * 4),
+                    rows_per_image: Some(ATLAS_SIDE),
                 },
                 texture_base: TextureCopyBase {
                     mip_level: 0,
@@ -3491,8 +3611,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                     aspect: FormatAspects::COLOR,
                 },
                 size: CopyExtent {
-                    width: 16,
-                    height: 16,
+                    width: ATLAS_SIDE,
+                    height: ATLAS_SIDE,
                     depth: 1,
                 },
             });
@@ -3659,6 +3779,12 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             if world_end > 0 {
                 encoder.draw(0, world_end, 0, 1);
             }
+            #[cfg(feature = "vanilla-water")]
+            if !controlled {
+                encoder.set_render_pipeline(&water_pipeline);
+                encoder.set_bind_group(&pipeline_layout, 0, &bind_group, &[]);
+                gpu_sections.draw_water(&mut encoder, vp, [cam_x, cam_y, cam_z]);
+            }
             #[cfg(feature = "render-diagnostics")]
             if frames_rendered == 1 {
                 encoder.set_render_pipeline(&probe_pipelines[1]);
@@ -3710,8 +3836,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                     log_line(&format!(
                         "GLES_ATLAS_HAL_CONTROL frame=2 sample=bottom_center expected={PROBE_CONTROL_TEXEL:?}"
                     ));
-                    let expected = probe_texture();
-                    let mut actual = [0; 1024];
+                    let expected = probe_texture(ATLAS_SIDE as usize);
+                    let mut actual = [0; ATLAS_LAYER_BYTES];
                     let (status, error) = device.diagnostic_atlas_layer(
                         &atlas_texture,
                         assets.white_layer as i32,
@@ -3722,7 +3848,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                         assets.white_layer,
                         actual.as_slice() == expected,
                         &actual[..4],
-                        &actual[32..36]
+                        &actual[(ATLAS_SIDE * 2) as usize..(ATLAS_SIDE * 2 + 4) as usize]
                     ));
                 }
                 encoder.reset_all(std::iter::once(world_commands));
@@ -3837,6 +3963,15 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 "PASS First playable first-person Horizon frame rendered and presented (vertices={})",
                 vertex_count
             ));
+            #[cfg(feature = "vanilla-water")]
+            log_line(&format!(
+                "WATER atlas_side={ATLAS_SIDE} layers={:?} cached_vertices={}",
+                assets.water_layers,
+                column_meshes
+                    .values()
+                    .map(|m| m.vertices.len() - m.solid_vertices as usize)
+                    .sum::<usize>(),
+            ));
         }
     }
 
@@ -3913,6 +4048,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         }
         device.destroy_render_pipeline(render_pipeline);
         device.destroy_render_pipeline(hand_pipeline);
+        #[cfg(feature = "vanilla-water")]
+        device.destroy_render_pipeline(water_pipeline);
         #[cfg(feature = "render-diagnostics")]
         for pipeline in probe_pipelines {
             device.destroy_render_pipeline(pipeline);
