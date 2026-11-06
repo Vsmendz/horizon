@@ -1,0 +1,12 @@
+[package]
+name = "horizon-switch-probes"
+version = "0.1.0"
+edition = "2024"
+[lib]
+crate-type = ["staticlib"]
+[features]
+egl = []
+[profile.release]
+panic = "abort"
+opt-level = 2
+[workspace]

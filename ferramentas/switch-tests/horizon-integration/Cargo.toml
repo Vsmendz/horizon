@@ -1,0 +1,27 @@
+[package]
+name = "horizon-switch-integration"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+
+[patch.crates-io]
+libc = { path = "../vendor/libc" }
+
+[dependencies]
+libc = "=0.2.191"
+horizon-core = { path = "../../../crates/horizon-core" }
+horizon-world = { path = "../../../crates/horizon-world" }
+horizon-client-core = { path = "../../../crates/horizon-client-core" }
+horizon-items = { path = "../../../crates/horizon-items" }
+naga = { path = "../../../third_party/naga", features = ["wgsl-in", "glsl-out"] }
+glow = "0.17.0"
+glam = "=0.30.10"
+bytemuck = { version = "=1.25.0", features = ["derive"] }

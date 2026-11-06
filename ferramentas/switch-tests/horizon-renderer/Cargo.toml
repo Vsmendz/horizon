@@ -1,0 +1,33 @@
+[package]
+name = "horizon-switch-renderer"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+
+[patch.crates-io]
+libc = { path = "../vendor/libc" }
+naga = { path = "../../../third_party/naga" }
+
+[dependencies]
+libc = "=0.2.191"
+horizon-core = { path = "../../../crates/horizon-core" }
+horizon-world = { path = "../../../crates/horizon-world" }
+horizon-client-core = { path = "../../../crates/horizon-client-core" }
+horizon-items = { path = "../../../crates/horizon-items" }
+horizon-assets = { path = "../../../crates/horizon-assets" }
+wgpu-hal = { path = "../vendor/wgpu-hal", features = ["gles"] }
+wgpu-types = "30.0.0"
+naga = { version = "30.0.0", features = ["wgsl-in", "glsl-out"] }
+png = "0.18"
+glam = "=0.30.10"
+bytemuck = { version = "=1.25.0", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.151", features = ["raw_value"] }

@@ -1,0 +1,16 @@
+[package]
+name = "horizon-switch-std-audit"
+version = "0.1.0"
+edition = "2024"
+[lib]
+path = "probe.rs"
+crate-type = ["staticlib"]
+[profile.release]
+panic = "abort"
+[workspace]
+
+[patch.crates-io]
+libc = { path = "../vendor/libc" }
+
+[dependencies]
+libc = "=0.2.191"

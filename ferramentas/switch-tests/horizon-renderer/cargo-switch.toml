@@ -1,0 +1,3 @@
+[patch.crates-io]
+libc = { path = "/mnt/c/Users/Pc vinw/Documents/horizon/ferramentas/switch-tests/vendor/libc" }
+naga = { path = "/mnt/c/Users/Pc vinw/Documents/horizon/third_party/naga" }

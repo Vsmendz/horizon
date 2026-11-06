@@ -1,0 +1,22 @@
+[package]
+name = "horizon-switch-worldgen"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[profile.release]
+panic = "abort"
+
+[workspace]
+
+[patch.crates-io]
+libc = { path = "../vendor/libc" }
+
+[dependencies]
+horizon-core = { path = "../../../crates/horizon-core" }
+horizon-world = { path = "../../../crates/horizon-world" }
+
+[target.'cfg(target_os = "horizon")'.dependencies]
+libc = "=0.2.191"
