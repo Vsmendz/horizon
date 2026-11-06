@@ -4,6 +4,7 @@
 //! cardinal shading, tint sources, block offsets; see `lighting`). Fluids
 //! follow `FluidRenderer` (see `fluid`).
 mod fluid;
+mod fluid_geometry;
 mod leaf_culling;
 mod lighting;
 pub mod packed;
