@@ -3,6 +3,8 @@ use glow::HasContext;
 use khronos_egl as egl;
 use naga::back::glsl;
 
+#[path = "../../vendor/wgpu-hal/src/gles/diagnostic_atlas.rs"]
+mod diagnostic_atlas;
 #[path = "../../vendor/wgpu-hal/src/gles/diagnostic_readback.rs"]
 mod diagnostic_readback;
 
@@ -196,6 +198,7 @@ unsafe fn verify_pixels(gl: &glow::Context) {
         gl.sampler_parameter_i32(sampler, glow::TEXTURE_MAG_FILTER, glow::NEAREST as i32);
         gl.bind_sampler(0, Some(sampler));
         let mut layers = vec![0; 42 * 1024];
+        layers[..4].copy_from_slice(&[88, 144, 200, 255]);
         for (i, texel) in layers[40 * 1024..41 * 1024].chunks_exact_mut(4).enumerate() {
             texel.copy_from_slice(if i % 16 < 8 {
                 &[200, 100, 40, 255]
@@ -237,6 +240,27 @@ unsafe fn verify_pixels(gl: &glow::Context) {
             );
         }
         gl.bind_buffer(glow::PIXEL_UNPACK_BUFFER, None);
+        let cpu_layers: Vec<_> = layers
+            .chunks_exact(1024)
+            .map(|layer| layer[..4].try_into().unwrap())
+            .collect();
+        let failures = diagnostic_atlas::probe(gl, texture, sampler, &cpu_layers, &mut |line| {
+            println!("{line}");
+        })
+        .unwrap();
+        assert_eq!(failures, 0, "direct GLES atlas probe");
+        assert_eq!(
+            gl.get_parameter_i32(glow::ACTIVE_TEXTURE),
+            glow::TEXTURE0 as i32
+        );
+        assert_eq!(
+            gl.get_parameter_texture(glow::TEXTURE_BINDING_2D_ARRAY),
+            Some(texture)
+        );
+        assert_eq!(
+            gl.get_parameter_sampler(glow::SAMPLER_BINDING),
+            Some(sampler)
+        );
         gl.viewport(0, 0, 64, 64);
         gl.enable(glow::DEPTH_TEST);
         gl.depth_func(glow::LESS);
@@ -404,6 +428,7 @@ unsafe fn verify_pixels(gl: &glow::Context) {
                 (6, "fs_probe_sample"),
                 (12, "fs_main"),
                 (24, "fs_probe_texel"),
+                (30, "fs_probe_fixed_texel"),
                 (18, "fs_probe_solid"),
             ] {
                 if start == 18 {
@@ -413,8 +438,16 @@ unsafe fn verify_pixels(gl: &glow::Context) {
                 gl.draw_arrays(glow::TRIANGLES, start, 6);
                 gl.delete_program(pipeline);
             }
-            let actual = [(3, 3), (10, 21), (32, 21), (53, 21), (10, 42), (32, 42)]
-                .map(|(x, y)| pixel(gl, x, y));
+            let actual = [
+                (3, 3),
+                (10, 21),
+                (32, 21),
+                (53, 21),
+                (10, 42),
+                (32, 42),
+                (32, 32),
+            ]
+            .map(|(x, y)| pixel(gl, x, y));
             assert_eq!(
                 actual,
                 [
@@ -424,6 +457,7 @@ unsafe fn verify_pixels(gl: &glow::Context) {
                     [112, 32, 16, 255],
                     [191, 64, 191, 255],
                     [32, 192, 224, 255],
+                    [88, 144, 200, 255],
                 ]
             );
             assert_eq!(gl.get_error(), glow::NO_ERROR);

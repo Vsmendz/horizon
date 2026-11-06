@@ -101,6 +101,8 @@ include!("../../runtime-audit/abi_assertions.rs");
 unsafe extern "C" {
     fn probe_log(s: *const c_char);
     fn horizon_switch_default_window() -> *mut c_void;
+    #[cfg(all(target_os = "horizon", feature = "render-diagnostics"))]
+    fn nwindowGetDimensions(window: *mut c_void, width: *mut u32, height: *mut u32) -> u32;
     #[cfg(not(feature = "vanilla"))]
     fn horizon_switch_romfs_mounted() -> c_int;
     #[cfg(feature = "vanilla")]
@@ -203,6 +205,35 @@ struct EglHandles {
     display: EGLDisplay,
     surface: EGLSurface,
     context: EGLContext,
+}
+
+#[cfg(all(target_os = "horizon", feature = "render-diagnostics"))]
+fn diagnostic_window_size(handles: EglHandles) -> Option<[i32; 2]> {
+    const EGL_WIDTH: EGLint = 0x3057;
+    const EGL_HEIGHT: EGLint = 0x3056;
+    let mut egl = [0, 0];
+    let mut native = [0, 0];
+    let (width, height, status) = unsafe {
+        (
+            eglQuerySurface(handles.display, handles.surface, EGL_WIDTH, &mut egl[0]),
+            eglQuerySurface(handles.display, handles.surface, EGL_HEIGHT, &mut egl[1]),
+            nwindowGetDimensions(
+                horizon_switch_default_window(),
+                &mut native[0],
+                &mut native[1],
+            ),
+        )
+    };
+    let size = if width != EGL_FALSE && height != EGL_FALSE && egl.iter().all(|&v| v > 0) {
+        Some(egl)
+    } else {
+        let native_size = native.map(|v| v as i32);
+        (status == 0 && native_size.iter().all(|&v| v > 0)).then_some(native_size)
+    };
+    log_line(&format!(
+        "GLES_WINDOW egl={egl:?} query_ok=({width},{height}) native={native:?} native_status={status:#x} chosen={size:?}"
+    ));
+    size
 }
 
 unsafe impl Send for EglHandles {}
@@ -677,6 +708,11 @@ fn fs_probe_sample(in: VertexOutput) -> @location(0) vec4<f32> {
 fn fs_probe_texel(in: VertexOutput) -> @location(0) vec4<f32> {
     return textureLoad(terrain_tex, vec2<i32>(in.uv_layer.xy * 16.0), i32(round(in.uv_layer.z)), 0);
 }
+
+@fragment
+fn fs_probe_fixed_texel() -> @location(0) vec4<f32> {
+    return textureLoad(terrain_tex, vec2<i32>(0), 0, 0);
+}
 "#;
 
 #[cfg(feature = "render-diagnostics")]
@@ -709,6 +745,18 @@ fn probe_panels(vertices: &mut Vec<TerrainVertex>, layer: u32) {
             vertex.color_ao[3] = 0.5;
         }
     }
+    // The center panel reads layer 0 without UV or layer vertex attributes.
+    emit_ndc_rect(
+        vertices,
+        Mat4::IDENTITY,
+        -0.19,
+        -0.10,
+        0.19,
+        0.10,
+        0.2,
+        layer as f32,
+        [1.0; 3],
+    );
 }
 
 #[cfg(feature = "render-diagnostics")]
@@ -2451,30 +2499,6 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
     ));
 
     let egl_handles = egl.handles;
-    #[cfg(feature = "render-diagnostics")]
-    let probe_window = {
-        let mut size = [0, 0];
-        let width = unsafe {
-            eglQuerySurface(
-                egl_handles.display,
-                egl_handles.surface,
-                0x3057,
-                &mut size[0],
-            )
-        };
-        let height = unsafe {
-            eglQuerySurface(
-                egl_handles.display,
-                egl_handles.surface,
-                0x3056,
-                &mut size[1],
-            )
-        };
-        log_line(&format!(
-            "GLES_WINDOW size={size:?} query_ok=({width},{height})"
-        ));
-        (width != EGL_FALSE && height != EGL_FALSE && size.iter().all(|&v| v > 0)).then_some(size)
-    };
     let surface = unsafe {
         wgpu_hal::gles::Surface::new_external(move || {
             let _ = &egl_handles;
@@ -2710,6 +2734,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         make_pipeline("probe solid", "vs_main", "fs_probe_solid"),
         make_pipeline("probe sampler", "vs_main", "fs_probe_sample"),
         make_pipeline("probe direct texel", "vs_main", "fs_probe_texel"),
+        make_pipeline("probe fixed texel", "vs_main", "fs_probe_fixed_texel"),
     ];
 
     let layer_count = assets.texture_layers.len() as u32;
@@ -3609,6 +3634,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                     (6, &probe_pipelines[1]),
                     (12, &render_pipeline),
                     (24, &probe_pipelines[2]),
+                    (30, &probe_pipelines[3]),
                 ] {
                     encoder.set_render_pipeline(pipeline);
                     encoder.set_bind_group(&pipeline_layout, 0, &bind_group, &[]);
@@ -3632,6 +3658,33 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                     log_line(&format!(
                         "GLES_WORLD frame={} {probe:?}",
                         frames_rendered + 1
+                    ));
+                }
+                if frames_rendered == 1 {
+                    device.diagnostic_atlas_binding(
+                        &probe_pipelines[3],
+                        &atlas_view,
+                        &sampler,
+                        |line| {
+                            log_line(&format!(
+                                "{line} frame=2 pipeline=fixed_textureLoad expected_pixel={:?}",
+                                &assets.texture_layers[0][..4]
+                            ));
+                        },
+                    );
+                    let expected = probe_texture();
+                    let mut actual = [0; 1024];
+                    let (status, error) = device.diagnostic_atlas_layer(
+                        &atlas_texture,
+                        assets.white_layer as i32,
+                        &mut actual,
+                    );
+                    log_line(&format!(
+                        "GLES_ATLAS_PANEL layer={} matches={} status={status:#x} error={error:#x} left={:?} right={:?}",
+                        assets.white_layer,
+                        actual.as_slice() == expected,
+                        &actual[..4],
+                        &actual[32..36]
                     ));
                 }
                 encoder.reset_all(std::iter::once(world_commands));
@@ -3676,8 +3729,20 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             fence_value += 1;
 
             #[cfg(feature = "render-diagnostics")]
-            if matches!(frames_rendered, 0 | 1 | 2 | 179) {
-                if let Some(probe) = surface.diagnostic_frame(&device, probe_window) {
+            if matches!(frames_rendered, 0..=3 | 179) {
+                if frames_rendered == 2 {
+                    device.diagnostic_atlas_binding(
+                        &render_pipeline,
+                        &atlas_view,
+                        &sampler,
+                        |line| {
+                            log_line(&format!("{line} frame=3 pipeline=terrain_hud"));
+                        },
+                    );
+                }
+                if let Some(probe) =
+                    surface.diagnostic_frame(&device, diagnostic_window_size(egl_handles))
+                {
                     log_line(&format!("GLES_PRE frame={} {probe:?}", frames_rendered + 1));
                 }
             }
@@ -3695,6 +3760,26 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                     "GLES_POST frame={} {probe:?}",
                     frames_rendered + 1
                 ));
+            }
+            #[cfg(feature = "render-diagnostics")]
+            if frames_rendered == 2 {
+                let mut first_texels: Vec<_> = assets
+                    .texture_layers
+                    .iter()
+                    .map(|layer| layer[..4].try_into().unwrap())
+                    .collect();
+                for anim in &assets.animations {
+                    first_texels[anim.layer_index as usize] =
+                        anim.frames[anim.current_frame][..4].try_into().unwrap();
+                }
+                if let Err(error) = device.diagnostic_atlas_sampling(
+                    &atlas_texture,
+                    &sampler,
+                    &first_texels,
+                    log_line,
+                ) {
+                    log_line(&format!("GLES_ATLAS_NATIVE shader_error={error:?}"));
+                }
             }
             device.destroy_texture_view(frame_view);
             encoder.reset_all(std::iter::once(cmd_buf));
