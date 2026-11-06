@@ -3,6 +3,9 @@ use glow::HasContext;
 use khronos_egl as egl;
 use naga::back::glsl;
 
+#[path = "../../vendor/wgpu-hal/src/gles/diagnostic_readback.rs"]
+mod diagnostic_readback;
+
 #[test]
 fn gles_offscreen_pixels() {
     unsafe { run() }
@@ -66,11 +69,84 @@ unsafe fn run() {
             gl.get_parameter_string(glow::RENDERER)
         );
         verify_pixels(&gl);
+        verify_readback(&gl);
     }
     egl.make_current(display, None, None, None).unwrap();
     egl.destroy_context(display, context).unwrap();
     egl.destroy_surface(display, surface).unwrap();
     egl.terminate(display).unwrap();
+}
+
+unsafe fn verify_readback(gl: &glow::Context) {
+    use diagnostic_readback::sample_frame;
+    unsafe {
+        let target = gl.create_renderbuffer().unwrap();
+        gl.bind_renderbuffer(glow::RENDERBUFFER, Some(target));
+        gl.renderbuffer_storage(glow::RENDERBUFFER, glow::RGBA8, 64, 64);
+        let framebuffer = gl.create_framebuffer().unwrap();
+        gl.bind_framebuffer(glow::FRAMEBUFFER, Some(framebuffer));
+        gl.framebuffer_renderbuffer(
+            glow::FRAMEBUFFER,
+            glow::COLOR_ATTACHMENT0,
+            glow::RENDERBUFFER,
+            Some(target),
+        );
+        gl.clear_color(32.0 / 255.0, 96.0 / 255.0, 224.0 / 255.0, 1.0);
+        gl.clear(glow::COLOR_BUFFER_BIT);
+        gl.enable(glow::SCISSOR_TEST);
+        gl.scissor(0, 16, 16, 12);
+        gl.clear_color(1.0, 0.0, 0.0, 1.0);
+        gl.clear(glow::COLOR_BUFFER_BIT);
+        gl.disable(glow::SCISSOR_TEST);
+        let pack = gl.create_buffer().unwrap();
+        gl.bind_buffer(glow::PIXEL_PACK_BUFFER, Some(pack));
+        gl.pixel_store_i32(glow::PACK_ROW_LENGTH, 3);
+        let before = sample_frame(gl, Some(framebuffer), [64, 64]);
+        assert_eq!(
+            gl.get_parameter_buffer(glow::PIXEL_PACK_BUFFER_BINDING),
+            Some(pack)
+        );
+        assert_eq!(gl.get_parameter_i32(glow::PACK_ROW_LENGTH), 3);
+        assert_eq!(
+            gl.get_parameter_framebuffer(glow::READ_FRAMEBUFFER_BINDING),
+            Some(framebuffer)
+        );
+        assert_ne!(before.framebuffer, 0);
+        assert_eq!(before.size, [64, 64]);
+        assert_eq!(before.read_buffer, glow::COLOR_ATTACHMENT0 as i32);
+        assert_eq!(before.attachment_status, glow::FRAMEBUFFER_COMPLETE);
+        assert_eq!((before.prior_error, before.read_error), (0, 0));
+        assert_eq!(before.samples[0].1, [32, 96, 224, 255]);
+        assert_eq!(before.samples[2].1, [255, 0, 0, 255]);
+
+        gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None);
+        gl.blit_framebuffer(
+            0,
+            64,
+            64,
+            0,
+            0,
+            0,
+            64,
+            64,
+            glow::COLOR_BUFFER_BIT,
+            glow::NEAREST,
+        );
+        let after = sample_frame(gl, None, [64, 64]);
+        assert_eq!(after.framebuffer, 0);
+        assert_eq!(after.read_buffer, glow::BACK as i32);
+        assert_eq!(after.attachment_status, glow::FRAMEBUFFER_COMPLETE);
+        assert_eq!((after.prior_error, after.read_error), (0, 0));
+        for (([x, y], pixel), ([wx, wy], window_pixel)) in
+            before.samples.into_iter().zip(after.samples)
+        {
+            assert_eq!((wx, wy, window_pixel), (x, 63 - y, pixel));
+        }
+        println!("GLES readback: sky and asymmetric marker match after Y-flipped blit");
+        gl.delete_buffer(pack);
+        gl.delete_framebuffer(framebuffer);
+        gl.delete_renderbuffer(target);
+    }
 }
 
 unsafe fn verify_pixels(gl: &glow::Context) {
@@ -288,6 +364,70 @@ unsafe fn verify_pixels(gl: &glow::Context) {
             assert_eq!(gl.get_error(), glow::NO_ERROR, "{label}");
             println!("{label}: {expected:?}");
             gl.delete_program(program);
+        }
+        #[cfg(feature = "render-diagnostics")]
+        {
+            use super::{DIAGNOSTIC_WGSL, PROBE_SKY, probe_panels, probe_texture};
+            let wgsl = format!("{HORIZON_WGSL_SHADER}{DIAGNOSTIC_WGSL}");
+            let mut panels = Vec::new();
+            probe_panels(&mut panels, 41);
+            let mut camera = camera;
+            camera.sun_dir = [0.0, 1.0, 0.0, 0.0];
+            gl.buffer_sub_data_u8_slice(glow::UNIFORM_BUFFER, 0, bytemuck::bytes_of(&camera));
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                bytemuck::cast_slice(&panels),
+                glow::STREAM_DRAW,
+            );
+            gl.tex_sub_image_3d(
+                glow::TEXTURE_2D_ARRAY,
+                0,
+                0,
+                0,
+                41,
+                16,
+                16,
+                1,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelUnpackData::Slice(Some(&probe_texture())),
+            );
+            gl.clear_color(
+                PROBE_SKY[0] as f32,
+                PROBE_SKY[1] as f32,
+                PROBE_SKY[2] as f32,
+                1.0,
+            );
+            gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+            for (start, fragment) in [
+                (0, "fs_probe_solid"),
+                (6, "fs_probe_sample"),
+                (12, "fs_main"),
+                (24, "fs_probe_texel"),
+                (18, "fs_probe_solid"),
+            ] {
+                if start == 18 {
+                    gl.clear(glow::DEPTH_BUFFER_BIT);
+                }
+                let pipeline = program(gl, &wgsl, fragment);
+                gl.draw_arrays(glow::TRIANGLES, start, 6);
+                gl.delete_program(pipeline);
+            }
+            let actual = [(3, 3), (10, 21), (32, 21), (53, 21), (10, 42), (32, 42)]
+                .map(|(x, y)| pixel(gl, x, y));
+            assert_eq!(
+                actual,
+                [
+                    [32, 96, 224, 255],
+                    [64, 191, 64, 255],
+                    [224, 64, 32, 255],
+                    [112, 32, 16, 255],
+                    [191, 64, 191, 255],
+                    [32, 192, 224, 255],
+                ]
+            );
+            assert_eq!(gl.get_error(), glow::NO_ERROR);
+            println!("GLES controlled panels: {actual:?}");
         }
     }
 }

@@ -26,7 +26,7 @@ is_std=name=="test2c_rust_std"
 is_integration=name=="test3_horizon_integration"
 is_renderer=name=="test4_horizon_renderer"
 is_worldgen=name=="test7_vanilla_worldgen"
-is_diagnostic=name=="test8b_vanilla_render_fix"
+is_diagnostic=name in ("test8b_vanilla_render_fix", "test8c_gles_pipeline_probe")
 is_vanilla=name=="test8_vanilla_streaming" or is_diagnostic
 is_client=name in (
     "test5_horizon_client", "test5b_horizon_client_fix",
@@ -34,6 +34,7 @@ is_client=name in (
     "test6c_horizon_nxlink_log",
     "test8_vanilla_streaming",
     "test8b_vanilla_render_fix",
+    "test8c_gles_pipeline_probe",
 )
 is_rust=name in ("test2a_rust", "test2b_rust_egl") or is_std or is_integration or is_renderer or is_client or is_worldgen
 is_c=name=="test2c_posix_c" or is_rust

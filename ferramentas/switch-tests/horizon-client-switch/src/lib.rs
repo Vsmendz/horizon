@@ -189,6 +189,13 @@ unsafe extern "C" {
     fn eglDestroySurface(dpy: EGLDisplay, surface: EGLSurface) -> EGLBoolean;
     fn eglTerminate(dpy: EGLDisplay) -> EGLBoolean;
     fn eglGetProcAddress(procname: *const c_char) -> *const c_void;
+    #[cfg(feature = "render-diagnostics")]
+    fn eglQuerySurface(
+        dpy: EGLDisplay,
+        surface: EGLSurface,
+        attribute: EGLint,
+        value: *mut EGLint,
+    ) -> EGLBoolean;
 }
 
 #[derive(Clone, Copy)]
@@ -653,6 +660,69 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(final_rgb, 1.0);
 }
 "#;
+
+#[cfg(feature = "render-diagnostics")]
+const DIAGNOSTIC_WGSL: &str = r#"
+@fragment
+fn fs_probe_solid(in: VertexOutput) -> @location(0) vec4<f32> {
+    return vec4<f32>(in.color_ao.rgb, 1.0);
+}
+
+@fragment
+fn fs_probe_sample(in: VertexOutput) -> @location(0) vec4<f32> {
+    return textureSample(terrain_tex, terrain_sampler, in.uv_layer.xy, i32(round(in.uv_layer.z)));
+}
+
+@fragment
+fn fs_probe_texel(in: VertexOutput) -> @location(0) vec4<f32> {
+    return textureLoad(terrain_tex, vec2<i32>(in.uv_layer.xy * 16.0), i32(round(in.uv_layer.z)), 0);
+}
+"#;
+
+#[cfg(feature = "render-diagnostics")]
+const PROBE_SKY: [f64; 3] = [32.0 / 255.0, 96.0 / 255.0, 224.0 / 255.0];
+
+#[cfg(feature = "render-diagnostics")]
+fn probe_panels(vertices: &mut Vec<TerrainVertex>, layer: u32) {
+    for (x, y, u, color) in [
+        (-2.0 / 3.0, 1.0 / 3.0, 0.25, [0.25, 0.75, 0.25]), // Solid.
+        (0.0, 1.0 / 3.0, 0.25, [1.0; 3]),                  // Sample without lighting.
+        (2.0 / 3.0, 1.0 / 3.0, 0.25, [1.0; 3]),            // Production fragment.
+        (-2.0 / 3.0, -1.0 / 3.0, 0.25, [0.75, 0.25, 0.75]), // Solid HUD.
+        (0.0, -1.0 / 3.0, 0.75, [1.0; 3]),                 // Direct texel load.
+    ] {
+        let start = vertices.len();
+        emit_ndc_rect(
+            vertices,
+            Mat4::IDENTITY,
+            x - 0.19,
+            y - 0.17,
+            x + 0.19,
+            y + 0.17,
+            0.2,
+            layer as f32,
+            color,
+        );
+        for vertex in &mut vertices[start..] {
+            vertex.uv_layer[0] = u;
+            vertex.uv_layer[1] = 0.5;
+            vertex.color_ao[3] = 0.5;
+        }
+    }
+}
+
+#[cfg(feature = "render-diagnostics")]
+fn probe_texture() -> Vec<u8> {
+    (0..16 * 16)
+        .flat_map(|i| {
+            if i % 16 < 8 {
+                [224, 64, 32, 255]
+            } else {
+                [32, 192, 224, 255]
+            }
+        })
+        .collect()
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -2381,6 +2451,30 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
     ));
 
     let egl_handles = egl.handles;
+    #[cfg(feature = "render-diagnostics")]
+    let probe_window = {
+        let mut size = [0, 0];
+        let width = unsafe {
+            eglQuerySurface(
+                egl_handles.display,
+                egl_handles.surface,
+                0x3057,
+                &mut size[0],
+            )
+        };
+        let height = unsafe {
+            eglQuerySurface(
+                egl_handles.display,
+                egl_handles.surface,
+                0x3056,
+                &mut size[1],
+            )
+        };
+        log_line(&format!(
+            "GLES_WINDOW size={size:?} query_ok=({width},{height})"
+        ));
+        (width != EGL_FALSE && height != EGL_FALSE && size.iter().all(|&v| v > 0)).then_some(size)
+    };
     let surface = unsafe {
         wgpu_hal::gles::Surface::new_external(move || {
             let _ = &egl_handles;
@@ -2436,7 +2530,11 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
     }
 
     // 5. Parse WGSL via Naga and create `wgpu-hal` ShaderModule, Pipeline, Textures, Buffers, BindGroup
-    let naga_module = match naga::front::wgsl::parse_str(HORIZON_WGSL_SHADER) {
+    #[cfg(feature = "render-diagnostics")]
+    let wgsl = format!("{HORIZON_WGSL_SHADER}{DIAGNOSTIC_WGSL}");
+    #[cfg(not(feature = "render-diagnostics"))]
+    let wgsl = HORIZON_WGSL_SHADER;
+    let naga_module = match naga::front::wgsl::parse_str(wgsl.as_ref()) {
         Ok(m) => m,
         Err(e) => {
             log_line(&format!("FAIL Naga WGSL parse error: {e}"));
@@ -2607,6 +2705,12 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
     };
     let render_pipeline = make_pipeline("horizon_client_pipeline", "vs_main", "fs_main");
     let hand_pipeline = make_pipeline("horizon_hand_pipeline", "vs_hand", "fs_hand");
+    #[cfg(feature = "render-diagnostics")]
+    let probe_pipelines = [
+        make_pipeline("probe solid", "vs_main", "fs_probe_solid"),
+        make_pipeline("probe sampler", "vs_main", "fs_probe_sample"),
+        make_pipeline("probe direct texel", "vs_main", "fs_probe_texel"),
+    ];
 
     let layer_count = assets.texture_layers.len() as u32;
     let atlas_texture = unsafe {
@@ -3223,7 +3327,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         let vp = proj * view;
         let inv_vp = vp.inverse();
 
-        let cam_ubo = CameraUniform {
+        let controlled = cfg!(feature = "render-diagnostics") && frames_rendered < 2;
+        let mut cam_ubo = CameraUniform {
             view_proj: vp.to_cols_array_2d(),
             hand_projection: Mat4::from_cols_array(&camera::hand_projection(
                 70.0,
@@ -3236,6 +3341,11 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             sun_dir: [sun_dir.x, sun_dir.y, sun_dir.z, 0.0],
             camera_pos: [cam_x, cam_y, cam_z, 1.0],
         };
+        if controlled {
+            cam_ubo.view_proj = Mat4::IDENTITY.to_cols_array_2d();
+            cam_ubo.sun_dir = [0.0, 1.0, 0.0, 0.0];
+            cam_ubo.camera_pos = [0.0, 0.0, 0.0, 1.0];
+        }
 
         // Share the upload buffer while keeping terrain, hand, and HUD draw ranges separate.
         frame_vertices.clear();
@@ -3243,11 +3353,11 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         for mesh in column_meshes.values() {
             frame_vertices.extend_from_slice(&mesh.vertices);
         }
-        if let Some(hit) = targeted_hit {
+        if !controlled && let Some(hit) = targeted_hit {
             append_target_highlight(&mut frame_vertices, hit.block, assets.white_layer);
         }
         let world_end = frame_vertices.len() as u32;
-        if !player.camera.detached {
+        if !controlled && !player.camera.detached {
             append_first_person_hand(
                 &mut frame_vertices,
                 player.selected_block(),
@@ -3258,12 +3368,18 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             );
         }
         let hand_end = frame_vertices.len() as u32;
-        append_hud_overlay(
-            &mut frame_vertices,
-            inv_vp,
-            player.inventory.selected(),
-            &assets,
-        );
+        if !controlled {
+            append_hud_overlay(
+                &mut frame_vertices,
+                inv_vp,
+                player.inventory.selected(),
+                &assets,
+            );
+        }
+        #[cfg(feature = "render-diagnostics")]
+        if frames_rendered == 1 {
+            probe_panels(&mut frame_vertices, assets.white_layer);
+        }
 
         frame_staging.clear();
         frame_staging.extend_from_slice(bytemuck::bytes_of(&cam_ubo));
@@ -3296,6 +3412,34 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             }
         }
 
+        #[cfg(feature = "render-diagnostics")]
+        if matches!(frames_rendered, 1 | 2) {
+            let offset = frame_staging.len() as u64;
+            if frames_rendered == 1 {
+                frame_staging.extend_from_slice(&probe_texture());
+            } else {
+                frame_staging
+                    .extend_from_slice(&assets.texture_layers[assets.white_layer as usize]);
+            }
+            anim_copies.push(BufferTextureCopy {
+                buffer_layout: wgpu_types::TexelCopyBufferLayout {
+                    offset,
+                    bytes_per_row: Some(64),
+                    rows_per_image: Some(16),
+                },
+                texture_base: TextureCopyBase {
+                    mip_level: 0,
+                    array_layer: assets.white_layer,
+                    origin: wgpu_types::Origin3d::ZERO,
+                    aspect: FormatAspects::COLOR,
+                },
+                size: CopyExtent {
+                    width: 16,
+                    height: 16,
+                    depth: 1,
+                },
+            });
+        }
         let v_bytes = bytemuck::cast_slice(&frame_vertices);
         let mut mesh_copy = None;
         let mut vertex_count = 0u32;
@@ -3402,6 +3546,9 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 );
             }
 
+            let clear = [f64::from(sky_r), f64::from(sky_g), f64::from(sky_b)];
+            #[cfg(feature = "render-diagnostics")]
+            let clear = if controlled { PROBE_SKY } else { clear };
             let color = ColorAttachment {
                 target: Attachment {
                     view: &frame_view,
@@ -3411,9 +3558,9 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 resolve_target: None,
                 ops: AttachmentOps::LOAD_CLEAR | AttachmentOps::STORE,
                 clear_value: wgpu_types::Color {
-                    r: sky_r as f64,
-                    g: sky_g as f64,
-                    b: sky_b as f64,
+                    r: clear[0],
+                    g: clear[1],
+                    b: clear[2],
                     a: 1.0,
                 },
             };
@@ -3448,12 +3595,50 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             encoder.set_render_pipeline(&render_pipeline);
             encoder.set_bind_group(&pipeline_layout, 0, &bind_group, &[]);
             #[cfg(feature = "vanilla")]
-            gpu_sections.draw(&mut encoder, vp);
+            if !controlled {
+                gpu_sections.draw(&mut encoder, vp);
+            }
             encoder.set_vertex_buffer(0, BufferBinding::new_unchecked(&vertex_buffer, 0, None));
             if world_end > 0 {
                 encoder.draw(0, world_end, 0, 1);
             }
+            #[cfg(feature = "render-diagnostics")]
+            if frames_rendered == 1 {
+                for (start, pipeline) in [
+                    (0, &probe_pipelines[0]),
+                    (6, &probe_pipelines[1]),
+                    (12, &render_pipeline),
+                    (24, &probe_pipelines[2]),
+                ] {
+                    encoder.set_render_pipeline(pipeline);
+                    encoder.set_bind_group(&pipeline_layout, 0, &bind_group, &[]);
+                    encoder.draw(start, 6, 0, 1);
+                }
+            }
             encoder.end_render_pass();
+
+            #[cfg(feature = "render-diagnostics")]
+            if controlled {
+                let world_commands = encoder.end_encoding().expect("end_encoding(probe world)");
+                queue
+                    .submit(
+                        &[&world_commands],
+                        &[&acquired.texture],
+                        (&mut fence, fence_value),
+                    )
+                    .expect("queue.submit(probe world)");
+                fence_value += 1;
+                if let Some(probe) = surface.diagnostic_frame(&device, None) {
+                    log_line(&format!(
+                        "GLES_WORLD frame={} {probe:?}",
+                        frames_rendered + 1
+                    ));
+                }
+                encoder.reset_all(std::iter::once(world_commands));
+                encoder
+                    .begin_encoding(Some("horizon_client_probe_overlay"))
+                    .expect("begin_encoding(probe overlay)");
+            }
 
             // Keep world color and clear world depth before drawing the camera-space hand.
             let overlay_color = [Some(ColorAttachment {
@@ -3471,10 +3656,16 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 encoder.set_bind_group(&pipeline_layout, 0, &bind_group, &[]);
                 encoder.draw(world_end, hand_end - world_end, 0, 1);
             }
-            if vertex_count > hand_end {
+            if !controlled && vertex_count > hand_end {
                 encoder.set_render_pipeline(&render_pipeline);
                 encoder.set_bind_group(&pipeline_layout, 0, &bind_group, &[]);
                 encoder.draw(hand_end, vertex_count - hand_end, 0, 1);
+            }
+            #[cfg(feature = "render-diagnostics")]
+            if frames_rendered == 1 {
+                encoder.set_render_pipeline(&probe_pipelines[0]);
+                encoder.set_bind_group(&pipeline_layout, 0, &bind_group, &[]);
+                encoder.draw(18, 6, 0, 1);
             }
             encoder.end_render_pass();
 
@@ -3485,12 +3676,9 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             fence_value += 1;
 
             #[cfg(feature = "render-diagnostics")]
-            if matches!(frames_rendered, 0 | 179) {
-                if let Some((center, hotbar, terrain, error)) = surface.diagnostic_frame(&device) {
-                    log_line(&format!(
-                        "GLES_PIXELS frame={} center={center:?} hotbar={hotbar:?} terrain={terrain:?} error=0x{error:x}",
-                        frames_rendered + 1
-                    ));
+            if matches!(frames_rendered, 0 | 1 | 2 | 179) {
+                if let Some(probe) = surface.diagnostic_frame(&device, probe_window) {
+                    log_line(&format!("GLES_PRE frame={} {probe:?}", frames_rendered + 1));
                 }
             }
             if let Err(e) = queue.present(&surface, acquired.texture) {
@@ -3501,6 +3689,13 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 break;
             }
 
+            #[cfg(feature = "render-diagnostics")]
+            if let Some(probe) = surface.take_diagnostic_present() {
+                log_line(&format!(
+                    "GLES_POST frame={} {probe:?}",
+                    frames_rendered + 1
+                ));
+            }
             device.destroy_texture_view(frame_view);
             encoder.reset_all(std::iter::once(cmd_buf));
         }
@@ -3589,6 +3784,10 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         device.destroy_texture(atlas_texture);
         device.destroy_render_pipeline(render_pipeline);
         device.destroy_render_pipeline(hand_pipeline);
+        #[cfg(feature = "render-diagnostics")]
+        for pipeline in probe_pipelines {
+            device.destroy_render_pipeline(pipeline);
+        }
         device.destroy_pipeline_layout(pipeline_layout);
         device.destroy_bind_group_layout(bind_group_layout);
         device.destroy_shader_module(shader_module);

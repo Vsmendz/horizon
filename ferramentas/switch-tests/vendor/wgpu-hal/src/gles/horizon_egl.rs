@@ -102,6 +102,7 @@ impl crate::Instance for Instance {
             presentable: true,
             swap_fn: None,
             swapchain: RwLock::new(None),
+            present_probe: Mutex::new(None),
         })
     }
 
@@ -196,7 +197,18 @@ pub struct Surface {
     pub(super) presentable: bool,
     swap_fn: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
     swapchain: RwLock<Option<Swapchain>>,
+    present_probe: Mutex<Option<PresentProbe>>,
 }
+
+#[derive(Debug)]
+enum PresentProbe {
+    Requested([i32; 2]),
+    Captured(FrameProbe),
+}
+
+#[path = "diagnostic_readback.rs"]
+mod diagnostic_readback;
+use diagnostic_readback::{FrameProbe, sample_frame};
 
 impl fmt::Debug for Surface {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -216,34 +228,23 @@ impl Surface {
     pub fn diagnostic_frame(
         &self,
         device: &super::Device,
-    ) -> Option<([u8; 4], [u8; 4], [u8; 4], u32)> {
+        window: Option<[i32; 2]>,
+    ) -> Option<FrameProbe> {
         let swapchain = self.swapchain.read();
         let sc = swapchain.as_ref()?;
         let gl = device.context().lock();
-        unsafe {
-            gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(sc.framebuffer));
-            let sample = |x, y| {
-                let mut bytes = [0; 4];
-                gl.read_pixels(
-                    x,
-                    y,
-                    1,
-                    1,
-                    glow::RGBA,
-                    glow::UNSIGNED_BYTE,
-                    glow::PixelPackData::Slice(Some(&mut bytes)),
-                );
-                bytes
-            };
-            let x = sc.extent.width as i32 / 2;
-            let y = sc.extent.height as i32;
-            let pixels = (
-                sample(x, y / 2),
-                sample(x, y * 94 / 100),
-                sample(x / 2, y * 3 / 4),
-            );
-            gl.bind_framebuffer(glow::READ_FRAMEBUFFER, None);
-            Some((pixels.0, pixels.1, pixels.2, gl.get_error()))
+        *self.present_probe.lock() = window.map(PresentProbe::Requested);
+        Some(sample_frame(
+            &gl,
+            Some(sc.framebuffer),
+            [sc.extent.width as i32, sc.extent.height as i32],
+        ))
+    }
+
+    pub fn take_diagnostic_present(&self) -> Option<FrameProbe> {
+        match self.present_probe.lock().take()? {
+            PresentProbe::Captured(frame) => Some(frame),
+            PresentProbe::Requested(_) => None,
         }
     }
 
@@ -256,6 +257,7 @@ impl Surface {
             presentable: true,
             swap_fn: Some(Arc::new(swap_fn)),
             swapchain: RwLock::new(None),
+            present_probe: Mutex::new(None),
         }
     }
 
@@ -299,6 +301,12 @@ impl Surface {
         };
 
         unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, None) };
+        {
+            let mut probe = self.present_probe.lock();
+            if let Some(PresentProbe::Requested(size)) = probe.take() {
+                *probe = Some(PresentProbe::Captured(sample_frame(&gl, None, size)));
+            }
+        }
 
         if let Some(ref swap_fn) = self.swap_fn {
             if !swap_fn() {
