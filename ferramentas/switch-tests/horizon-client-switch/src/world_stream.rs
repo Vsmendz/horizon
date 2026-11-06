@@ -910,6 +910,7 @@ impl HorizonClientWorld {
             _ => Err(invalid("invalid saved angle")),
         };
         let pos = Vec3::new(coord("x")?, coord("y")?, coord("z")?);
+        #[cfg(not(feature = "first-person-polish"))]
         if !(f64::from(MIN_Y - 12)..=f64::from(MAX_Y + 96)).contains(&pos.y) {
             return Err(invalid("saved player outside streaming height"));
         }

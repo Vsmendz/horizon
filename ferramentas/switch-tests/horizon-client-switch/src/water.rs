@@ -12,13 +12,25 @@ const DEFAULT_WATER: u32 = 0x3f76e4;
 
 pub(super) fn biome_water_color(json: &str) -> io::Result<u32> {
     let data: serde_json::Value = serde_json::from_str(json)?;
-    let value = &data["effects"]["water_color"];
+    Ok(read_color(&data["effects"]["water_color"], DEFAULT_WATER))
+}
+
+#[cfg(feature = "first-person-polish")]
+pub(super) fn biome_water_fog_color(json: &str) -> io::Result<u32> {
+    let data: serde_json::Value = serde_json::from_str(json)?;
+    Ok(read_color(
+        &data["attributes"]["minecraft:visual/water_fog_color"],
+        0x050533,
+    ))
+}
+
+fn read_color(value: &serde_json::Value, default: u32) -> u32 {
     let color = value.as_i64().map(|n| n as u32).or_else(|| {
         value
             .as_str()
             .and_then(|s| u32::from_str_radix(s.trim_start_matches('#'), 16).ok())
     });
-    Ok(color.unwrap_or(DEFAULT_WATER) & 0xff_ffff)
+    color.unwrap_or(default) & 0xff_ffff
 }
 
 pub(super) fn is_water(fluid: FluidState) -> bool {

@@ -30,8 +30,14 @@ mod mesh_upload;
 #[cfg(feature = "vanilla-water")]
 mod water;
 
+#[cfg(feature = "first-person-polish")]
+#[allow(dead_code)]
+#[path = "../../../../crates/horizon-client/src/first_person_shared.rs"]
+mod first_person_shared;
 #[cfg(all(test, target_os = "linux"))]
 mod pixel_test;
+#[cfg(feature = "first-person-polish")]
+mod polish;
 #[allow(dead_code)]
 #[path = "../../../../crates/horizon-client/src/ticket_levels.rs"]
 mod ticket_levels;
@@ -67,8 +73,10 @@ use horizon_assets::blockstate::{BlockStateDefinition, Variant, VariantSet};
 use horizon_assets::model::{CuboidModel, Direction as AssetDirection, Material};
 use horizon_assets::resolve::ModelLibrary;
 use horizon_client_core::text::Text;
+#[cfg(not(feature = "first-person-polish"))]
+use horizon_core::geometry::trig;
 use horizon_core::{
-    geometry::{Aabb, BlockHit, Direction, Vec3, VoxelShape, trig, try_resolve_step_movement},
+    geometry::{Aabb, BlockHit, Direction, Vec3, VoxelShape, try_resolve_step_movement},
     position::BlockPos,
     version::{DATA_VERSION, PROTOCOL_VERSION, VANILLA_VERSION},
 };
@@ -415,6 +423,8 @@ pub struct PadSettings {
     pub look_deadzone: f32,
     pub invert_y: bool,
     pub nintendo_letters: bool,
+    #[cfg(feature = "first-person-polish")]
+    pub fov: i32,
 }
 
 impl Default for PadSettings {
@@ -426,6 +436,8 @@ impl Default for PadSettings {
             look_deadzone: 0.12,
             invert_y: false,
             nintendo_letters: true,
+            #[cfg(feature = "first-person-polish")]
+            fov: 70,
         }
     }
 }
@@ -455,6 +467,12 @@ impl PadSettings {
                             settings.look_deadzone = val.clamp(0.05, 0.40);
                         }
                     }
+                    #[cfg(feature = "first-person-polish")]
+                    "fov" => {
+                        if let Ok(value) = v.trim().parse::<i32>() {
+                            settings.fov = value.clamp(30, 110);
+                        }
+                    }
                     "invert_y" => settings.invert_y = v.trim() == "true",
                     "nintendo_letters" => settings.nintendo_letters = v.trim() == "true",
                     _ => {}
@@ -470,6 +488,8 @@ impl PadSettings {
                 settings.invert_y,
                 settings.nintendo_letters
             );
+            #[cfg(feature = "first-person-polish")]
+            let content = format!("{content}fov:{}\n", settings.fov);
             let _ = fs::write(path, content);
         }
         settings
@@ -614,6 +634,7 @@ struct CameraUniform {
     sky_color: vec4<f32>,
     sun_dir: vec4<f32>,
     camera_pos: vec4<f32>,
+    water_fog: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -674,6 +695,12 @@ fn fs_hand(in: VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(tex.rgb * in.color_ao.rgb * light, 1.0);
 }
 
+fn scene_fog(tinted: vec3<f32>, dist: f32) -> vec3<f32> {
+    let air = mix(tinted, camera.sky_color.rgb, clamp((dist - 28.0) / 44.0, 0.0, 0.72));
+    let water = mix(tinted, camera.water_fog.rgb, clamp((dist + 8.0) / 32.0, 0.0, 1.0));
+    return mix(air, water, camera.water_fog.a);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let layer_idx = i32(round(in.uv_layer.z));
@@ -687,14 +714,28 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ndotl = max(dot(n, l), 0.0);
 
     let face_shade = in.color_ao.a;
-    let light = clamp((0.45 + 0.55 * ndotl) * face_shade, 0.25, 1.20);
+    let light = select(clamp((0.45 + 0.55 * ndotl) * face_shade, 0.25, 1.20), face_shade, camera.sun_dir.w > 0.0);
     let tinted = tex.rgb * in.color_ao.rgb * light;
 
     let dist = distance(in.world_pos, camera.camera_pos.xyz);
-    let fog_factor = clamp((dist - 28.0) / 44.0, 0.0, 0.72);
-    let final_rgb = mix(tinted, camera.sky_color.rgb, fog_factor);
+    let final_rgb = scene_fog(tinted, dist);
 
     return vec4<f32>(final_rgb, 1.0);
+}
+"#;
+
+#[cfg(feature = "first-person-polish")]
+const POLISH_WGSL: &str = r#"
+@fragment
+fn fs_hand_polished(in: VertexOutput) -> @location(0) vec4<f32> {
+    let tex = textureSample(terrain_tex, terrain_sampler, in.uv_layer.xy, i32(round(in.uv_layer.z)));
+    if (tex.a < 0.5) { discard; }
+    let n = normalize(in.normal);
+    let l0 = normalize(vec3<f32>(0.2, 1.0, -0.7));
+    let l1 = normalize(vec3<f32>(-0.2, 1.0, 0.7));
+    let light = min(1.0, (max(0.0, dot(l0, n)) + max(0.0, dot(l1, n))) * 0.6 + 0.4);
+    let base = tex.rgb * in.color_ao.rgb * light;
+    return vec4<f32>(mix(base, base * 0.75 + camera.water_fog.rgb * 0.25, camera.water_fog.a), 1.0);
 }
 "#;
 
@@ -708,8 +749,7 @@ fn fs_water(in: VertexOutput) -> @location(0) vec4<f32> {
     }
     let tinted = tex.rgb * in.color_ao.rgb * in.color_ao.a;
     let dist = distance(in.world_pos, camera.camera_pos.xyz);
-    let fog = clamp((dist - 28.0) / 44.0, 0.0, 0.72);
-    return vec4<f32>(mix(tinted, camera.sky_color.rgb, fog), tex.a);
+    return vec4<f32>(scene_fog(tinted, dist), tex.a);
 }
 "#;
 
@@ -815,6 +855,7 @@ struct CameraUniform {
     sky_color: [f32; 4],
     sun_dir: [f32; 4],
     camera_pos: [f32; 4],
+    water_fog: [f32; 4],
 }
 
 #[repr(C)]
@@ -859,6 +900,8 @@ pub struct BakedAssetRegistry {
     water_layers: [u32; 3],
     sprite_to_layer: BTreeMap<String, u32>,
     baked_quads: BTreeMap<VoxelBlock, Vec<ModelQuad>>,
+    #[cfg(feature = "first-person-polish")]
+    hand_models: BTreeMap<VoxelBlock, Mat4>,
     animations: Vec<AnimatedLayer>,
     white_layer: u32,
 }
@@ -1074,6 +1117,8 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
     let model_lib = ModelLibrary::new(models_map).map_err(|e| format!("ModelLibrary::new: {e}"))?;
 
     let mut baked_quads = BTreeMap::new();
+    #[cfg(feature = "first-person-polish")]
+    let mut hand_models = BTreeMap::new();
     let blocks = VoxelBlock::ALL_NON_AIR.into_iter();
     #[cfg(feature = "vanilla")]
     let blocks = blocks.chain(VoxelBlock::TERRAIN_MODELS);
@@ -1130,6 +1175,16 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
         if quads.is_empty() {
             return Err(format!("Block {name} produced 0 baked quads"));
         }
+        #[cfg(feature = "first-person-polish")]
+        {
+            use horizon_assets::model::DisplayTransform;
+            let display = match &resolved.display.contexts[3] {
+                DisplayTransform::Explicit(transform) => transform.as_ref(),
+                DisplayTransform::Inherit => None,
+            };
+            let matrix = horizon_assets::item_bake::item_transform_matrix(display, false);
+            hand_models.insert(block, Mat4::from_cols_array_2d(&matrix.0));
+        }
         baked_quads.insert(block, quads);
     }
 
@@ -1153,6 +1208,8 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
         water_layers: [still?, flow?, overlay?],
         sprite_to_layer,
         baked_quads,
+        #[cfg(feature = "first-person-polish")]
+        hand_models,
         animations,
         white_layer,
     })
@@ -1234,6 +1291,80 @@ fn vanilla_romfs_bakes_models_and_meshes_the_spawn() -> Result<(), Box<dyn std::
     let vp = Mat4::perspective_rh(1.1, 1.7, 0.05, 120.0);
     assert!(section_visible(vp, ((0, -1), (-MIN_Y) / MESH_HEIGHT)));
     assert!(!section_visible(vp, ((0, 2), (-MIN_Y) / MESH_HEIGHT)));
+    #[cfg(feature = "first-person-polish")]
+    {
+        let model = first_person_shared::item_anchor(1.0, 0.0)
+            * assets.hand_models[&VoxelBlock::GrassBlock];
+        let hand_proj = Mat4::from_cols_array(&camera::hand_projection(70.0, 1280.0, 720.0, 120.0));
+        let vertices = assets.baked_quads[&VoxelBlock::GrassBlock]
+            .iter()
+            .flat_map(|quad| quad.positions)
+            .map(|p| hand_proj.project_point3(model.transform_point3(GlamVec3::from_array(p))));
+        // The original pose clips part of the block at the lower screen edge.
+        let top = vertices
+            .clone()
+            .map(|p| p.y)
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            (-0.9..0.0).contains(&top)
+                && vertices
+                    .clone()
+                    .any(|p| (0.0..1.0).contains(&p.x) && (-1.0..0.0).contains(&p.y)),
+            "the held block must reach into the lower-right quadrant, top={top}"
+        );
+
+        let [sx, sz] = world.spawn_xz();
+        let safe = polish::dry_spawn(&world, sx, sz).unwrap();
+        assert!(polish::valid_restore(&world, safe));
+        let foot = BlockPos::new(
+            safe.x.floor() as i32,
+            safe.y.floor() as i32,
+            safe.z.floor() as i32,
+        );
+        assert!(world.set_block(foot, VoxelBlock::Stone));
+        assert!(!polish::valid_restore(&world, safe));
+        assert_ne!(polish::dry_spawn(&world, sx, sz), Some(safe));
+        assert!(world.set_block(foot, VoxelBlock::Air));
+        let registry = world.vanilla.generator.data().registry();
+        let mut slab = registry
+            .state(registry.default_state("minecraft:stone_slab").unwrap())
+            .unwrap()
+            .clone();
+        slab.properties.insert("type".into(), "top".into());
+        world
+            .chunks
+            .get_mut(&player_chunk(safe))
+            .unwrap()
+            .set(foot.offset(0, 1, 0), registry.id(&slab).unwrap())?;
+        assert!(polish::intersects_blocks(
+            &world,
+            HorizonLocalPlayer::standing_bounds(safe)
+        ));
+        assert!(
+            polish::valid_restore(&world, safe),
+            "a valid crouched position is preserved"
+        );
+        let pool = foot.offset(0, 6, 0);
+        for dy in 0..=2 {
+            assert!(world.set_block(pool.offset(0, dy, 0), VoxelBlock::Water));
+        }
+        let pool_pos = Vec3::new(
+            f64::from(pool.x) + 0.5,
+            f64::from(pool.y),
+            f64::from(pool.z) + 0.5,
+        );
+        let mut swimmer = HorizonLocalPlayer::new(pool_pos);
+        assert!(
+            polish::valid_restore(&world, pool_pos),
+            "a valid submerged pose is preserved"
+        );
+        assert!(polish::eye_in_water(
+            &world,
+            [pool_pos.x, pool_pos.y + 1.62, pool_pos.z]
+        ));
+        swimmer.tick_physics(&world, 0.0, 0.0, true);
+        assert!(swimmer.position.y > pool_pos.y && swimmer.velocity.y > 0.0);
+    }
     Ok(())
 }
 
@@ -1353,9 +1484,27 @@ impl HorizonClientWorld {
                         } else {
                             match quad.facing {
                                 AssetDirection::Up => 1.00,
-                                AssetDirection::Down => 0.52,
-                                AssetDirection::North | AssetDirection::South => 0.82,
-                                AssetDirection::West | AssetDirection::East => 0.68,
+                                AssetDirection::Down => {
+                                    if cfg!(feature = "first-person-polish") {
+                                        0.5
+                                    } else {
+                                        0.52
+                                    }
+                                }
+                                AssetDirection::North | AssetDirection::South => {
+                                    if cfg!(feature = "first-person-polish") {
+                                        0.8
+                                    } else {
+                                        0.82
+                                    }
+                                }
+                                AssetDirection::West | AssetDirection::East => {
+                                    if cfg!(feature = "first-person-polish") {
+                                        0.6
+                                    } else {
+                                        0.68
+                                    }
+                                }
                             }
                         };
                         let tint = block.biome_tint(quad.tint_index);
@@ -1513,6 +1662,9 @@ fn open_vanilla_world()
                 PathBuf::from("sdmc:/switch/horizon/saves/switch_vanilla_test8"), vanilla);
             let saved = world.read_player()?;
             let [x, z] = world.spawn_xz();
+            #[cfg(feature = "first-person-polish")]
+            let mut center = saved.map_or((x >> 4, z >> 4), |state| player_chunk(state.0));
+            #[cfg(not(feature = "first-person-polish"))]
             let center = saved.map_or((x >> 4, z >> 4), |state| player_chunk(state.0));
             report("INFO Preparing initial 3x3 view");
             if let Some(change) = world.stream_to(center)? {
@@ -1522,6 +1674,22 @@ fn open_vanilla_world()
                     change.generated_us, change.read_us,
                 ));
             }
+            #[cfg(feature = "first-person-polish")]
+            let saved = if let Some((pos, yaw, pitch, slot)) = saved {
+                if polish::valid_restore(&world, pos) {
+                    Some((pos, yaw, pitch, slot))
+                } else {
+                    let mut recovery = polish::dry_spawn(&world, pos.x.floor() as i32, pos.z.floor() as i32);
+                    if recovery.is_none() {
+                        center = (x >> 4, z >> 4);
+                        world.stream_to(center)?;
+                        recovery = polish::dry_spawn(&world, x, z);
+                    }
+                    let recovered = recovery.ok_or_else(|| std::io::Error::other("no dry recovery position in loaded terrain"))?;
+                    report(&format!("SPAWN recovered invalid saved position {pos:?} to {recovered:?}"));
+                    Some((recovered, yaw, pitch, slot))
+                }
+            } else { None };
             Ok::<_, std::io::Error>((world, saved, center))
         })?;
     unsafe { horizon_loading_begin() };
@@ -1617,7 +1785,10 @@ pub struct HorizonLocalPlayer {
     pub camera: camera::Camera,
     pub camera_type: camera::CameraType,
     pub bob: camera::AvatarBob,
+    #[cfg(not(feature = "first-person-polish"))]
     pub hand_swing: f32,
+    #[cfg(feature = "first-person-polish")]
+    hand: polish::HandPresentation,
     pub inventory: PlayerInventory<VoxelBlock, u8, u8>,
     pub cooldowns: Cooldowns,
     pub blocks_broken: u32,
@@ -1668,7 +1839,10 @@ impl HorizonLocalPlayer {
             },
             camera_type: camera::CameraType::FirstPerson,
             bob: camera::AvatarBob::default(),
+            #[cfg(not(feature = "first-person-polish"))]
             hand_swing: 0.0,
+            #[cfg(feature = "first-person-polish")]
+            hand: polish::HandPresentation::new(VoxelBlock::HOTBAR_BLOCKS[0]),
             inventory,
             cooldowns: Cooldowns::default(),
             blocks_broken: 0,
@@ -1684,11 +1858,20 @@ impl HorizonLocalPlayer {
         }
     }
 
+    #[cfg(feature = "first-person-polish")]
+    fn standing_bounds(pos: Vec3) -> Aabb {
+        Self::bounds(pos, Self::STANDING_HEIGHT)
+    }
+
     pub fn aabb_at(&self, pos: Vec3) -> Aabb {
+        Self::bounds(pos, self.height())
+    }
+
+    fn bounds(pos: Vec3, height: f64) -> Aabb {
         let half_w = Self::WIDTH * 0.5;
         Aabb::new(
             Vec3::new(pos.x - half_w, pos.y, pos.z - half_w),
-            Vec3::new(pos.x + half_w, pos.y + self.height(), pos.z + half_w),
+            Vec3::new(pos.x + half_w, pos.y + height, pos.z + half_w),
         )
     }
 
@@ -1786,6 +1969,9 @@ impl HorizonLocalPlayer {
         self.bob
             .tick([self.position.x, self.position.y, self.position.z]);
 
+        #[cfg(feature = "first-person-polish")]
+        self.hand.tick(self.selected_block());
+        #[cfg(not(feature = "first-person-polish"))]
         if self.hand_swing > 0.0 {
             self.hand_swing = (self.hand_swing - 0.18).max(0.0);
         }
@@ -1799,7 +1985,11 @@ impl HorizonLocalPlayer {
         }
 
         self.jumping = jump_held;
-        if self.jumping && self.on_ground && self.jump_cooldown == 0 {
+        #[cfg(feature = "first-person-polish")]
+        let water_depth = polish::water_depth(world, self.aabb());
+        #[cfg(not(feature = "first-person-polish"))]
+        let water_depth = 0.0;
+        if self.jumping && self.on_ground && self.jump_cooldown == 0 && water_depth <= 0.4 {
             struct JumpCtx<'a>(&'a mut HorizonLocalPlayer);
             impl LivingMotionWorld for JumpCtx<'_> {
                 type Error = Infallible;
@@ -2037,6 +2227,51 @@ impl HorizonLocalPlayer {
                 }
             }
 
+            #[cfg(feature = "first-person-polish")]
+            impl horizon_world::living_fluid::LivingFluidWorld for TravelCtx<'_> {
+                fn in_water(&mut self) -> Result<bool, Self::Error> {
+                    Ok(polish::water_depth(self.world, self.player.aabb()) > 0.0)
+                }
+                fn sprinting(&mut self) -> Result<bool, Self::Error> {
+                    Ok(self.player.sprinting)
+                }
+                fn water_slow_down(&mut self) -> Result<f32, Self::Error> {
+                    Ok(0.8)
+                }
+                fn water_movement_efficiency(&mut self) -> Result<f64, Self::Error> {
+                    Ok(0.0)
+                }
+                fn dolphins_grace(&mut self) -> Result<bool, Self::Error> {
+                    Ok(false)
+                }
+                fn fluid_height(
+                    &mut self,
+                    tag: horizon_world::living_fluid::TravelFluidTag,
+                ) -> Result<f64, Self::Error> {
+                    use horizon_world::living_fluid::TravelFluidTag;
+                    Ok(match tag {
+                        TravelFluidTag::Lava => 0.0,
+                        TravelFluidTag::EntityFloatable => {
+                            polish::water_depth(self.world, self.player.aabb())
+                        }
+                    })
+                }
+                fn fluid_jump_threshold(&mut self) -> Result<f64, Self::Error> {
+                    Ok(0.4)
+                }
+                fn is_free(&mut self, offset: Vec3) -> Result<bool, Self::Error> {
+                    let bounds = self.player.aabb().move_by(offset);
+                    Ok(!polish::intersects_blocks(self.world, bounds)
+                        && polish::water_depth(self.world, bounds) == 0.0)
+                }
+                fn is_vehicle(&mut self) -> Result<bool, Self::Error> {
+                    Ok(false)
+                }
+                fn can_float_while_ridden(&mut self) -> Result<bool, Self::Error> {
+                    Ok(false)
+                }
+            }
+
             impl PlayerTravelWorld for TravelCtx<'_> {
                 type Error = Infallible;
                 fn is_passenger(&mut self) -> Result<bool, Self::Error> {
@@ -2077,10 +2312,28 @@ impl HorizonLocalPlayer {
                     Ok(self.player.sprinting)
                 }
                 fn living_travel(&mut self, input: Vec3) -> Result<(), Self::Error> {
+                    #[cfg(feature = "first-person-polish")]
+                    if polish::water_depth(self.world, self.player.aabb()) > 0.0 {
+                        use horizon_world::living_fluid::travel_in_water;
+                        let falling = self.player.velocity.y <= 0.0;
+                        let old_y = self.player.position.y;
+                        self.player.fall_distance = 0.0;
+                        return travel_in_water(self, input, 0.08, falling, old_y);
+                    }
                     travel_in_air(self, input)
                 }
             }
 
+            #[cfg(feature = "first-person-polish")]
+            if water_depth > 0.0 {
+                // LivingEntity's float/sink step, before fluid drag.
+                let vertical = f64::from(0.04f32);
+                if self.sneaking {
+                    self.velocity.y -= vertical;
+                } else if self.jumping && (!self.on_ground || water_depth > 0.4) {
+                    self.velocity.y += vertical;
+                }
+            }
             let mut travel_ctx = TravelCtx {
                 player: self,
                 world,
@@ -2200,28 +2453,41 @@ pub fn append_first_person_hand(
     out: &mut Vec<TerrainVertex>,
     block: VoxelBlock,
     assets: &BakedAssetRegistry,
-    bob: &camera::AvatarBob,
-    partial_tick: f32,
+    #[cfg(not(feature = "first-person-polish"))] bob: &camera::AvatarBob,
+    #[cfg(not(feature = "first-person-polish"))] partial_tick: f32,
     swing: f32,
+    #[cfg(feature = "first-person-polish")] pose: (Mat4, f32),
 ) {
     let Some(quads) = assets.baked_quads.get(&block) else {
         return;
     };
-    let walk_angle =
-        f64::from(bob.backwards_interpolated_walk_distance(partial_tick) * std::f32::consts::PI);
-    let amplitude = bob.interpolated_bob(partial_tick);
-    let bob_x = trig::sin(walk_angle) * amplitude * 0.18;
-    let bob_y = -(trig::cos(walk_angle) * amplitude).abs() * 0.22;
-    let swing_arc = (swing * std::f32::consts::PI).sin();
+    #[cfg(feature = "first-person-polish")]
+    let model_mat = pose.0
+        * first_person_shared::apply_swing(
+            first_person_shared::item_anchor(1.0, pose.1),
+            1.0,
+            swing,
+        )
+        * assets.hand_models[&block];
+    #[cfg(not(feature = "first-person-polish"))]
+    let model_mat = {
+        let walk_angle = f64::from(
+            bob.backwards_interpolated_walk_distance(partial_tick) * std::f32::consts::PI,
+        );
+        let amplitude = bob.interpolated_bob(partial_tick);
+        let bob_x = trig::sin(walk_angle) * amplitude * 0.18;
+        let bob_y = -(trig::cos(walk_angle) * amplitude).abs() * 0.22;
+        let swing_arc = (swing * std::f32::consts::PI).sin();
 
-    let model_mat = Mat4::from_translation(GlamVec3::new(
-        0.56 + bob_x - swing_arc * 0.16,
-        -0.50 + bob_y - swing_arc * 0.12,
-        -0.95 - swing_arc * 0.18,
-    )) * Mat4::from_rotation_y(-0.62 - swing_arc * 0.35)
-        * Mat4::from_rotation_x(0.22 - swing_arc * 0.45)
-        * Mat4::from_scale(GlamVec3::splat(0.36));
-
+        let model_mat = Mat4::from_translation(GlamVec3::new(
+            0.56 + bob_x - swing_arc * 0.16,
+            -0.50 + bob_y - swing_arc * 0.12,
+            -0.95 - swing_arc * 0.18,
+        )) * Mat4::from_rotation_y(-0.62 - swing_arc * 0.35)
+            * Mat4::from_rotation_x(0.22 - swing_arc * 0.45)
+            * Mat4::from_scale(GlamVec3::splat(0.36));
+        model_mat
+    };
     for quad in quads {
         let normal = match quad.facing {
             AssetDirection::Up => GlamVec3::Y,
@@ -2249,7 +2515,10 @@ pub fn append_first_person_hand(
         for &vi in &[0usize, 1, 2, 0, 2, 3] {
             let p = quad.positions[vi];
             let uv = quad.uv[vi];
+            #[cfg(not(feature = "first-person-polish"))]
             let local = GlamVec3::from_array(p) - GlamVec3::splat(0.5);
+            #[cfg(feature = "first-person-polish")]
+            let local = GlamVec3::from_array(p);
             out.push(TerrainVertex {
                 pos: model_mat.transform_point3(local).to_array(),
                 normal,
@@ -2484,6 +2753,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             return 3;
         }
     };
+    #[cfg(feature = "first-person-polish")]
+    let assets_start = Instant::now();
     let mut assets = match load_and_bake_assets() {
         Ok(reg) => reg,
         Err(e) => {
@@ -2492,6 +2763,11 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         }
     };
     let total_baked_quads: usize = assets.baked_quads.values().map(Vec::len).sum();
+    #[cfg(feature = "first-person-polish")]
+    log_line(&format!(
+        "INIT asset_bake_ms={}",
+        assets_start.elapsed().as_millis()
+    ));
     log_line(&format!(
         "PASS Horizon 26.3 assets loaded and baked via horizon-assets: source='{}' blocks={} textures={} animations={} total_quads={}",
         assets.source_label,
@@ -2523,6 +2799,18 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         log_line(&format!("FAIL Loading initial streaming columns: {e}"));
         return 3;
     }
+    #[cfg(feature = "first-person-polish")]
+    let mut player = match saved
+        .map(|state| state.0)
+        .or_else(|| polish::dry_spawn(&world, spawn_x, spawn_z))
+    {
+        Some(pos) => HorizonLocalPlayer::new(pos),
+        None => {
+            log_line("FAIL No dry supported initial spawn in loaded terrain");
+            return 3;
+        }
+    };
+    #[cfg(not(feature = "first-person-polish"))]
     let mut player =
         HorizonLocalPlayer::new(saved.map_or_else(|| world.spawn_position(), |state| state.0));
     if let Some((pos, yaw, pitch, slot)) = saved {
@@ -2540,7 +2828,29 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
     ));
 
     // Step initial player physics & raycast verification
+    #[cfg(not(feature = "first-person-polish"))]
     player.tick_physics(&world, 0.0, 0.0, false);
+    #[cfg(feature = "first-person-polish")]
+    {
+        player.hand = polish::HandPresentation::new(player.selected_block());
+        if polish::intersects_blocks(&world, HorizonLocalPlayer::standing_bounds(player.position)) {
+            player.sneaking = true;
+            player.camera.eye_height = HorizonLocalPlayer::SNEAKING_EYE_HEIGHT;
+            player.camera.eye_height_old = player.camera.eye_height;
+        }
+        let eye = player.eye_position();
+        let eye_block = BlockPos::new(
+            eye.x.floor() as i32,
+            eye.y.floor() as i32,
+            eye.z.floor() as i32,
+        );
+        log_line(&format!(
+            "SPAWN eye_state={:?} eye_water={} body_water_depth={:.3}",
+            world.state_at(eye_block),
+            polish::eye_in_water(&world, [eye.x, eye.y, eye.z]),
+            polish::water_depth(&world, player.aabb())
+        ));
+    }
     player.sync_camera(1.0, &mut world);
     let initial_ray = player.raycast_block(&mut world);
     log_line(&format!(
@@ -2678,6 +2988,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
     // 5. Parse WGSL via Naga and create `wgpu-hal` ShaderModule, Pipeline, Textures, Buffers, BindGroup
     let wgsl = [
         HORIZON_WGSL_SHADER,
+        #[cfg(feature = "first-person-polish")]
+        POLISH_WGSL,
         #[cfg(feature = "vanilla-water")]
         WATER_WGSL,
         #[cfg(feature = "render-diagnostics")]
@@ -2854,7 +3166,12 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             .expect("create_render_pipeline")
     };
     let render_pipeline = make_pipeline("horizon_client_pipeline", "vs_main", "fs_main", None);
-    let hand_pipeline = make_pipeline("horizon_hand_pipeline", "vs_hand", "fs_hand", None);
+    let hand_entry = if cfg!(feature = "first-person-polish") {
+        "fs_hand_polished"
+    } else {
+        "fs_hand"
+    };
+    let hand_pipeline = make_pipeline("horizon_hand_pipeline", "vs_hand", hand_entry, None);
     #[cfg(feature = "vanilla-water")]
     let water_pipeline = make_pipeline(
         "horizon water",
@@ -3176,6 +3493,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
     let mut respawn_requested = false;
     let mut last_frame = Instant::now();
     let mut physics_accum = 0.0f32;
+    #[cfg(feature = "first-person-polish")]
+    let mut water_view = polish::WaterView::default();
     let mut frame_vertices: Vec<TerrainVertex> = Vec::with_capacity(65536);
     let mut frame_staging = Vec::new();
     let mut max_frame_us = 0;
@@ -3183,6 +3502,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
     let mut max_mesh_us = 0;
     let mut interval_samples = 0;
     let mut interval_total_us = 0;
+    let mut frame_gaps_over_1s = 0;
     let mut max_upload_us = 0;
     let mut max_upload_bytes = 0;
     #[cfg(feature = "vanilla")]
@@ -3206,14 +3526,21 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
 
         let now = Instant::now();
         let frame_interval = now - last_frame;
-        if frames_rendered > 0 {
+        if frames_rendered > 0 && frame_interval > Duration::from_secs(1) {
+            frame_gaps_over_1s += 1;
+        } else if frames_rendered > 0 {
             let us = frame_interval.as_micros();
             max_frame_us = max_frame_us.max(us);
             slow_frames += u64::from(us > 33_333);
             interval_samples += 1;
             interval_total_us += us;
         }
-        let dt = frame_interval.as_secs_f32().clamp(0.001, 0.1);
+        let dt = if frame_interval > Duration::from_secs(1) {
+            physics_accum = 0.0;
+            0.0
+        } else {
+            frame_interval.as_secs_f32().min(0.1)
+        };
         last_frame = now;
 
         let pad = PadState::from_switch_hid(k_held, lx, ly, rx, ry, &pad_settings);
@@ -3238,6 +3565,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             ));
         }
 
+        #[cfg(feature = "first-person-polish")]
+        let was_sneaking = player.sneaking;
         // L3 toggles Sprint, R3 toggles Sneak/Crouch
         if edges.pressed(PadButton::LeftThumb) {
             player.sprinting = !player.sprinting;
@@ -3264,6 +3593,17 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         let mut targeted_hit: Option<BlockHit> = None;
 
         if let Ok(mut guard) = world_arc.lock() {
+            #[cfg(feature = "first-person-polish")]
+            if was_sneaking
+                && !player.sneaking
+                && polish::intersects_blocks(
+                    &guard,
+                    HorizonLocalPlayer::standing_bounds(player.position),
+                )
+            {
+                player.sneaking = true;
+                player.sprinting = false;
+            }
             match stream_worker.poll() {
                 Ok(Some(prepared)) if prepared.manual_save => {
                     if let Some(change) = guard.apply_stream(prepared) {
@@ -3326,7 +3666,18 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 let ready = true;
                 if ready {
                     respawn_requested = false;
-                    player.position = guard.spawn_position();
+                    #[cfg(not(feature = "first-person-polish"))]
+                    {
+                        player.position = guard.spawn_position();
+                    }
+                    #[cfg(feature = "first-person-polish")]
+                    if let Some(pos) = polish::dry_spawn(&guard, spawn_x, spawn_z) {
+                        player.position = pos;
+                    } else {
+                        log_line("FAIL No dry supported recovery position near world spawn");
+                        result = 19;
+                        break;
+                    }
                     player.previous = player.position;
                     player.velocity = Vec3::ZERO;
                     player.yaw = 180.0;
@@ -3407,14 +3758,27 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                     stream_worker.awaiting
                 ));
             }
+            #[cfg(feature = "first-person-polish")]
+            {
+                // Stick look is already integrated per frame. Interpolate movement, not this input twice.
+                player.yaw_o = player.yaw;
+                player.pitch_o = player.pitch;
+            }
             player.sync_camera(partial_tick, &mut guard);
+            #[cfg(feature = "first-person-polish")]
+            water_view.update(&guard, player.camera.position, dt);
 
             // Voxel raycast from player eyes
             targeted_hit = player.raycast_block(&mut guard);
 
             // Break block (ZR or D-Pad Left)
             if edges.pressed(PadButton::RightTrigger) || edges.pressed(PadButton::DPadLeft) {
-                player.hand_swing = 1.0;
+                #[cfg(feature = "first-person-polish")]
+                player.hand.attack();
+                #[cfg(not(feature = "first-person-polish"))]
+                {
+                    player.hand_swing = 1.0;
+                }
                 if let Some(hit) = targeted_hit {
                     if hit.block.y > MIN_Y
                         && guard.get_block(hit.block) != VoxelBlock::Bedrock
@@ -3431,7 +3795,10 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
 
             // Place block (A or ZL)
             if edges.pressed(PadButton::East) || edges.pressed(PadButton::LeftTrigger) {
-                player.hand_swing = 1.0;
+                #[cfg(not(feature = "first-person-polish"))]
+                {
+                    player.hand_swing = 1.0;
+                }
                 if let Some(hit) = targeted_hit {
                     let (dx, dy, dz) = direction_offset(hit.direction);
                     let place_pos = hit.block.offset(dx, dy, dz);
@@ -3440,6 +3807,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                         let chosen = player.selected_block();
                         if guard.set_block(place_pos, chosen) {
                             player.blocks_placed += 1;
+                            #[cfg(feature = "first-person-polish")]
+                            player.hand.place();
                             log_line(&format!(
                                 "EVENT Placed {:?} at ({}, {}, {})",
                                 chosen, place_pos.x, place_pos.y, place_pos.z
@@ -3474,13 +3843,30 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
 
         // Build View-Projection Matrix using real `camera::view_matrix` + `AvatarBob`
         let partial_tick = (physics_accum / 0.05).clamp(0.0, 1.0);
+        #[cfg(feature = "first-person-polish")]
+        let base_fov = pad_settings.fov;
+        #[cfg(not(feature = "first-person-polish"))]
+        let base_fov = 70;
         let fov_deg = player.camera.calculate_fov(
             partial_tick,
-            70,
+            base_fov,
             1.0,
             None,
             camera::CameraFluid::None,
             false,
+        );
+        #[cfg(feature = "first-person-polish")]
+        let fov_deg = camera::lerp(
+            water_view.blend,
+            fov_deg,
+            player.camera.calculate_fov(
+                partial_tick,
+                base_fov,
+                1.0,
+                None,
+                camera::CameraFluid::Water,
+                false,
+            ),
         );
         let proj = Mat4::perspective_rh(fov_deg.to_radians(), 1280.0 / 720.0, 0.05, 120.0);
         let bob_mat = if !player.camera.detached {
@@ -3505,6 +3891,13 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         let inv_vp = vp.inverse();
 
         let controlled = cfg!(feature = "render-diagnostics") && frames_rendered < 2;
+        #[cfg(feature = "first-person-polish")]
+        let fog = water_view.uniform();
+        #[cfg(not(feature = "first-person-polish"))]
+        let fog = [0.0; 4];
+        let sky = std::array::from_fn::<_, 3, _>(|i| {
+            camera::lerp(fog[3], [sky_r, sky_g, sky_b][i], fog[i])
+        });
         let mut cam_ubo = CameraUniform {
             view_proj: vp.to_cols_array_2d(),
             hand_projection: Mat4::from_cols_array(&camera::hand_projection(
@@ -3515,8 +3908,18 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             ))
             .to_cols_array_2d(),
             sky_color: [sky_r, sky_g, sky_b, 1.0],
-            sun_dir: [sun_dir.x, sun_dir.y, sun_dir.z, 0.0],
+            sun_dir: [
+                sun_dir.x,
+                sun_dir.y,
+                sun_dir.z,
+                if cfg!(feature = "first-person-polish") {
+                    1.0
+                } else {
+                    0.0
+                },
+            ],
             camera_pos: [cam_x, cam_y, cam_z, 1.0],
+            water_fog: fog,
         };
         if controlled {
             cam_ubo.view_proj = Mat4::IDENTITY.to_cols_array_2d();
@@ -3537,11 +3940,24 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         if !controlled && !player.camera.detached {
             append_first_person_hand(
                 &mut frame_vertices,
+                #[cfg(not(feature = "first-person-polish"))]
                 player.selected_block(),
+                #[cfg(feature = "first-person-polish")]
+                player.hand.visible,
                 &assets,
+                #[cfg(not(feature = "first-person-polish"))]
                 &player.bob,
+                #[cfg(not(feature = "first-person-polish"))]
                 partial_tick,
+                #[cfg(not(feature = "first-person-polish"))]
                 player.hand_swing,
+                #[cfg(feature = "first-person-polish")]
+                player.hand.swing.animation(partial_tick),
+                #[cfg(feature = "first-person-polish")]
+                (
+                    bob_mat,
+                    1.0 - player.hand.heights.interpolated(partial_tick)[0],
+                ),
             );
         }
         let hand_end = frame_vertices.len() as u32;
@@ -3723,7 +4139,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 );
             }
 
-            let clear = [f64::from(sky_r), f64::from(sky_g), f64::from(sky_b)];
+            let clear = sky.map(f64::from);
             #[cfg(feature = "render-diagnostics")]
             let clear = if controlled { PROBE_SKY } else { clear };
             let color = ColorAttachment {
@@ -3988,7 +4404,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         result = 19;
     }
     log_line(&format!(
-        "FRAME_TIMING max_interval_us={max_frame_us} intervals_over_33ms={slow_frames} max_column_mesh_us={max_mesh_us} interval_samples={interval_samples} interval_total_us={interval_total_us}"
+        "FRAME_TIMING max_interval_us={max_frame_us} intervals_over_33ms={slow_frames} max_column_mesh_us={max_mesh_us} interval_samples={interval_samples} interval_total_us={interval_total_us} frame_gaps_over_1s={frame_gaps_over_1s}"
     ));
     log_line(&format!(
         "UPLOAD max_staging_write_us={max_upload_us} max_staging_bytes={max_upload_bytes} peak_cpu_mesh_bytes={peak_mesh_bytes}"

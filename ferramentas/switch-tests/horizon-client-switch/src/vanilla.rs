@@ -32,6 +32,8 @@ pub struct Vanilla {
     pub fluids: horizon_world::fluid::FluidStateTable,
     #[cfg(feature = "vanilla-water")]
     pub water_colors: Box<[u32]>,
+    #[cfg(feature = "first-person-polish")]
+    pub water_fog_colors: Box<[u32]>,
 }
 
 impl Vanilla {
@@ -93,6 +95,10 @@ impl Vanilla {
         let water_colors = (0..data.biome_names().len())
             .map(|id| crate::water::biome_water_color(data.biome_json(BiomeId(id as u32))))
             .collect::<io::Result<_>>()?;
+        #[cfg(feature = "first-person-polish")]
+        let water_fog_colors = (0..data.biome_names().len())
+            .map(|id| crate::water::biome_water_fog_color(data.biome_json(BiomeId(id as u32))))
+            .collect::<io::Result<_>>()?;
         log(&format!(
             "INIT generator_ms={} seed={SEED} min_y={MIN_Y} height={HEIGHT} sea_level={}",
             start.elapsed().as_millis(),
@@ -106,6 +112,8 @@ impl Vanilla {
             fluids,
             #[cfg(feature = "vanilla-water")]
             water_colors,
+            #[cfg(feature = "first-person-polish")]
+            water_fog_colors,
         }))
     }
 

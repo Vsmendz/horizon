@@ -186,6 +186,7 @@ unsafe fn verify_pixels(gl: &glow::Context, device: &wgpu_hal::gles::Device) {
             sky_color: [0.0, 0.0, 1.0, 1.0],
             sun_dir: [0.0, 0.0, 1.0, 0.0],
             camera_pos: [0.0, 0.0, 0.0, 1.0],
+            water_fog: [0.0; 4],
         };
         let uniforms = gl.create_buffer().unwrap();
         gl.bind_buffer(glow::UNIFORM_BUFFER, Some(uniforms));
@@ -333,7 +334,7 @@ unsafe fn verify_pixels(gl: &glow::Context, device: &wgpu_hal::gles::Device) {
             "let tex = vec4<f32>(1.0);",
         );
         let unlit = HORIZON_WGSL_SHADER.replace(
-            "let light = clamp((0.45 + 0.55 * ndotl) * face_shade, 0.25, 1.20);",
+            "let light = select(clamp((0.45 + 0.55 * ndotl) * face_shade, 0.25, 1.20), face_shade, camera.sun_dir.w > 0.0);",
             "let light = 1.0;",
         );
         for (label, source, entry, layer, shade, expected) in [
@@ -502,6 +503,47 @@ unsafe fn verify_pixels(gl: &glow::Context, device: &wgpu_hal::gles::Device) {
             assert_eq!(gl.get_error(), glow::NO_ERROR);
             gl.delete_program(opaque);
             gl.delete_program(water);
+        }
+        #[cfg(feature = "first-person-polish")]
+        {
+            let hand = program(
+                gl,
+                &format!("{HORIZON_WGSL_SHADER}{}", super::POLISH_WGSL),
+                "fs_hand_polished",
+            );
+            let mut wet = camera;
+            wet.water_fog = [0.0, 0.0, 1.0, 1.0];
+            let triangle =
+                [[-0.75, -0.75], [0.75, -0.75], [0.0, 0.75]].map(|[x, y]| TerrainVertex {
+                    pos: [x, y, 0.2],
+                    normal: [0.0, -1.0, 0.0],
+                    uv_layer: [0.5, 0.5, 41.0],
+                    color_ao: [1.0; 4],
+                });
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                bytemuck::cast_slice(&triangle),
+                glow::STREAM_DRAW,
+            );
+            let draw = |view: &CameraUniform| {
+                gl.buffer_sub_data_u8_slice(glow::UNIFORM_BUFFER, 0, bytemuck::bytes_of(view));
+                gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+                gl.use_program(Some(hand));
+                gl.draw_arrays(glow::TRIANGLES, 0, 3);
+                pixel(gl, 32, 32)
+            };
+            assert_eq!(draw(&camera), [102, 102, 102, 255]);
+            let tinted = draw(&wet);
+            assert!(
+                tinted
+                    .into_iter()
+                    .zip([77u8, 77, 140, 255])
+                    .all(|(a, b)| a.abs_diff(b) <= 1),
+                "{tinted:?}"
+            );
+            gl.buffer_sub_data_u8_slice(glow::UNIFORM_BUFFER, 0, bytemuck::bytes_of(&camera));
+            gl.delete_program(hand);
+            assert_eq!(gl.get_error(), glow::NO_ERROR);
         }
         #[cfg(feature = "render-diagnostics")]
         {
