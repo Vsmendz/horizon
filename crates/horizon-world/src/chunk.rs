@@ -369,6 +369,7 @@ fn id_in(
 fn out_of_bounds() -> io::Error {
     invalid("section index out of bounds")
 }
+#[derive(Clone)]
 pub struct BlockSection<'r> {
     palette: Vec<BlockStateId>,
     last: Option<(BlockStateId, u32)>,

@@ -331,18 +331,30 @@ fn quantize_parameter_report(json: &str) -> Result<String, GeneratorError> {
     Ok(Value::Array(entries).to_string())
 }
 /// `load` on a thread of its own ("Worldgen loader").
+type LoadProfile<'a> = Option<&'a dyn Fn(&str, std::time::Duration)>;
+type LoadThread<T> = std::thread::JoinHandle<(T, Option<std::time::Duration>)>;
+
 fn loading<T: Send + 'static>(
     load: impl FnOnce() -> T + Send + 'static,
-) -> io::Result<std::thread::JoinHandle<T>> {
+    profile: bool,
+) -> io::Result<LoadThread<T>> {
     std::thread::Builder::new()
         .name("Worldgen loader".into())
-        .spawn(load)
+        .spawn(move || {
+            let start = profile.then(std::time::Instant::now);
+            let value = load();
+            (value, start.map(|start| start.elapsed()))
+        })
 }
 /// A loading thread's result; its panic goes on in this thread.
-fn joined<T>(thread: std::thread::JoinHandle<T>) -> T {
-    thread
+fn joined<T>(thread: LoadThread<T>, profile: LoadProfile<'_>, label: &str) -> T {
+    let (value, elapsed) = thread
         .join()
-        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+        .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+    if let (Some(report), Some(elapsed)) = (profile, elapsed) {
+        report(label, elapsed);
+    }
+    value
 }
 impl GeneratorData {
     /// Load a worldgen bundle directory. Required files are JSON objects mapping
@@ -365,6 +377,25 @@ impl GeneratorData {
         registry: &'static BlockRegistry,
         ov: &WorldgenOverrides,
     ) -> Result<Arc<Self>, GeneratorError> {
+        Self::load_inner(dir, registry, ov, None)
+    }
+
+    /// Load the same vanilla tables and report elapsed time for the major readers.
+    pub fn load_profiled(
+        dir: &Path,
+        registry: &'static BlockRegistry,
+        profile: &dyn Fn(&str, std::time::Duration),
+    ) -> Result<Arc<Self>, GeneratorError> {
+        Self::load_inner(dir, registry, &WorldgenOverrides::default(), Some(profile))
+    }
+
+    fn load_inner(
+        dir: &Path,
+        registry: &'static BlockRegistry,
+        ov: &WorldgenOverrides,
+        profile: LoadProfile<'_>,
+    ) -> Result<Arc<Self>, GeneratorError> {
+        let main_start = profile.map(|_| std::time::Instant::now());
         let mut warnings = Vec::new();
         let flags: Vec<(bool, bool)> =
             serde_json::from_str(&fs::read_to_string(dir.join("block_flags.json"))?)?;
@@ -395,33 +426,44 @@ impl GeneratorData {
         // and the block behaviours) need only the tags: they run on threads of
         // their own while this one reads the rest. A new world's first chunks
         // wait for all of it, with the chunk workers idle.
-        let blocks = loading({
-            let (dir, tags, fluids) = (dir.join("blocks"), block_tags.clone(), fluid_tags.clone());
-            move || super::generator_blocks::BlockBehavior::load(&dir, registry, &tags, &fluids)
-        })?;
-        let structures = loading({
-            let (dir, tags, ov) = (dir.to_owned(), block_tags.clone(), ov.clone());
-            move || -> Result<_, GeneratorError> {
-                let Ok(json) = fs::read_to_string(dir.join("blocks/structure-blocks.json")) else {
-                    return Ok(None);
-                };
-                Ok(Some(Arc::new(super::structure::StructureResources::new(
-                    registry,
-                    super::structure::StateTransforms::from_json(&json, registry.len())?,
-                    &dir.join("structure"),
-                    read_optional_bundle(&dir, &ov, "processor_lists")?.unwrap_or_default(),
-                    &tags,
-                ))))
-            }
-        })?;
-        let behaviours = loading({
-            let root = dir.parent().map(Path::to_owned);
-            move || {
-                root.filter(|root| root.join("block-behaviours.json").exists())
-                    .and_then(|root| crate::level::Behaviours::load(registry, &root).ok())
-                    .map(Arc::new)
-            }
-        })?;
+        let blocks = loading(
+            {
+                let (dir, tags, fluids) =
+                    (dir.join("blocks"), block_tags.clone(), fluid_tags.clone());
+                move || super::generator_blocks::BlockBehavior::load(&dir, registry, &tags, &fluids)
+            },
+            profile.is_some(),
+        )?;
+        let structures = loading(
+            {
+                let (dir, tags, ov) = (dir.to_owned(), block_tags.clone(), ov.clone());
+                move || -> Result<_, GeneratorError> {
+                    let Ok(json) = fs::read_to_string(dir.join("blocks/structure-blocks.json"))
+                    else {
+                        return Ok(None);
+                    };
+                    Ok(Some(Arc::new(super::structure::StructureResources::new(
+                        registry,
+                        super::structure::StateTransforms::from_json(&json, registry.len())?,
+                        &dir.join("structure"),
+                        read_optional_bundle(&dir, &ov, "processor_lists")?.unwrap_or_default(),
+                        &tags,
+                    ))))
+                }
+            },
+            profile.is_some(),
+        )?;
+        let behaviours = loading(
+            {
+                let root = dir.parent().map(Path::to_owned);
+                move || {
+                    root.filter(|root| root.join("block-behaviours.json").exists())
+                        .and_then(|root| crate::level::Behaviours::load(registry, &root).ok())
+                        .map(Arc::new)
+                }
+            },
+            profile.is_some(),
+        )?;
         let tag_set = |name: &str| -> Result<BTreeSet<&str>, GeneratorError> {
             Ok(block_tags
                 .get(name)
@@ -514,6 +556,9 @@ impl GeneratorData {
                 .collect(),
         )
         .map_err(|e| resource(format!("carving blocks: {e}")))?;
+        if let (Some(report), Some(start)) = (profile, main_start) {
+            report("flags_tags_biomes_carvers", start.elapsed());
+        }
         let feature_resources = match (
             read_optional_bundle(dir, ov, "features")?,
             read_optional_bundle(dir, ov, "placed_features")?,
@@ -522,14 +567,14 @@ impl GeneratorData {
                 features,
                 placed,
                 feature_tags: read_optional_bundle(dir, ov, "feature_tags")?.unwrap_or_default(),
-                blocks: joined(blocks)?,
+                blocks: joined(blocks, profile, "block_tables")?,
                 fluid_tags,
                 state_providers: read_optional_bundle(dir, ov, "state_providers")?
                     .unwrap_or_default(),
             }),
             _ => None,
         };
-        let structures = joined(structures)?;
+        let structures = joined(structures, profile, "structure_resources")?;
         let structure_resources = match (
             read_optional_bundle(dir, ov, "structures")?,
             read_optional_bundle(dir, ov, "structure_sets")?,
@@ -542,7 +587,7 @@ impl GeneratorData {
             }),
             _ => None,
         };
-        let behaviours = joined(behaviours);
+        let behaviours = joined(behaviours, profile, "block_behaviours");
         Ok(Arc::new(Self {
             behaviours,
             structure_resources,
@@ -660,6 +705,21 @@ impl GeneratorData {
     }
     pub fn block_states(&self) -> &GenBlockStates {
         &self.states
+    }
+    /// Static collision shape from the prepared vanilla table, when present.
+    pub fn cached_collision_shape(
+        &self,
+        id: BlockStateId,
+    ) -> Option<&horizon_core::geometry::VoxelShape> {
+        self.feature_resources
+            .as_ref()?
+            .blocks
+            .as_ref()?
+            .collision
+            .cached_shapes()
+            .cached_shape(id)
+            .ok()
+            .flatten()
     }
     /// Biome identifiers in registry (identifier-sorted) order.
     pub fn configured_feature_json(&self, name: &str) -> Option<&str> {

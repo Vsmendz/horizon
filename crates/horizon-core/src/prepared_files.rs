@@ -365,7 +365,7 @@ fn write_padded(out: &mut impl Write, bytes: &[u8]) -> io::Result<()> {
     out.write_all(&[0; 8][..(pad(bytes.len() as u64) as usize - bytes.len())])
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "horizon")))]
 fn read_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
     std::os::unix::fs::FileExt::read_exact_at(file, buf, offset)
 }
@@ -384,7 +384,8 @@ fn read_at(file: &File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
     }
     Ok(())
 }
-#[cfg(not(any(unix, windows)))]
+// devkitA64 declares pread in newlib's headers but does not supply the symbol.
+#[cfg(any(target_os = "horizon", not(any(unix, windows))))]
 fn read_at(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
     use std::io::Seek;
     static LOCK: Mutex<()> = Mutex::new(());

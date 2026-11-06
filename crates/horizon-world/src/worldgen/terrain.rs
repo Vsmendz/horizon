@@ -120,6 +120,7 @@ impl From<AquiferError> for TerrainError {
 
 /// Resident registry-backed sections, optional heightmaps and ordered per-section
 /// fluid postprocessing offsets for the noise and surface generation stages.
+#[derive(Clone)]
 pub struct TerrainChunk<'r, B: TerrainBlockStates> {
     stage: PreLightChunkStage,
     below_zero_retrogen: Option<crate::retrogen::BelowZeroRetrogen>,
@@ -162,6 +163,7 @@ impl PreLightChunkStage {
         self.status().heightmaps()
     }
 }
+#[derive(Clone)]
 struct TerrainBlocks<'r, B: TerrainBlockStates> {
     min_y: i32,
     height: i32,
@@ -576,6 +578,16 @@ impl<'r, B: TerrainBlockStates> TerrainChunk<'r, B> {
     }
     pub fn heightmap(&self, kind: HeightmapType) -> Option<&Heightmap> {
         self.heightmaps[kind as usize].as_ref()
+    }
+    pub fn restore_heightmap(
+        &mut self,
+        kind: HeightmapType,
+        words: &[u64],
+    ) -> Result<(), HeightmapError> {
+        let mut map = Heightmap::new(kind, self.min_y(), self.height())?;
+        map.set_raw_data(&self.blocks, words)?;
+        self.heightmaps[kind as usize] = Some(map);
+        Ok(())
     }
     pub fn block_ticks(&self) -> &ProtoChunkTicks {
         &self.block_ticks
