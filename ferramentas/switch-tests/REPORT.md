@@ -393,7 +393,7 @@ Offline validation:
 - NRO artifact: `ferramentas/switch-tests/out/test8_vanilla_streaming.nro` (57,885,357 bytes, SHA-256 `106db3017167533a076c0c781f98cafa809767cea44ed8e9ab4876eef9f3fc72`).
 
 Pending hardware items:
-- The user ran Test 8 on hardware and observed a black terrain-shaped region. The log and photograph have not been located. The cause remains under investigation and visual validation remains pending.
+- The supplied hardware log and photograph show a black terrain-shaped region and a dark crosshair. The run presented 10,982 frames, crossed chunks, recorded 14 breaks and six placements, saved two columns and exited with RESULT=0. It did not test reopening. The upload cap excluded visible sections in 111 frames. The cause of the black pixels remains under investigation.
 - The cause of the ~60s cold startup observed in Test 7 remains to be isolated with hardware timing data.
 
 How to deploy:
