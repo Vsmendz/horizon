@@ -717,6 +717,8 @@ fn fs_probe_fixed_texel() -> @location(0) vec4<f32> {
 
 #[cfg(feature = "render-diagnostics")]
 const PROBE_SKY: [f64; 3] = [32.0 / 255.0, 96.0 / 255.0, 224.0 / 255.0];
+#[cfg(feature = "render-diagnostics")]
+const PROBE_CONTROL_TEXEL: [u8; 4] = [92, 212, 56, 255];
 
 #[cfg(feature = "render-diagnostics")]
 fn probe_panels(vertices: &mut Vec<TerrainVertex>, layer: u32) {
@@ -755,6 +757,18 @@ fn probe_panels(vertices: &mut Vec<TerrainVertex>, layer: u32) {
         0.10,
         0.2,
         layer as f32,
+        [1.0; 3],
+    );
+    // Sample the separate HAL control texture at the bottom-center readback point.
+    emit_ndc_rect(
+        vertices,
+        Mat4::IDENTITY,
+        -0.19,
+        -0.97,
+        0.19,
+        -0.79,
+        0.2,
+        0.0,
         [1.0; 3],
     );
 }
@@ -2738,10 +2752,10 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
     ];
 
     let layer_count = assets.texture_layers.len() as u32;
-    let atlas_texture = unsafe {
-        device
-            .create_texture(&TextureDescriptor {
-                label: Some("horizon_client_atlas_2d_array"),
+    let make_atlas = |label| unsafe {
+        let texture = device
+            .create_texture_2d_array(&TextureDescriptor {
+                label: Some(label),
                 size: wgpu_types::Extent3d {
                     width: 16,
                     height: 16,
@@ -2755,12 +2769,10 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 memory_flags: MemoryFlags::empty(),
                 view_formats: Vec::new(),
             })
-            .expect("create_texture(atlas)")
-    };
-    let atlas_view = unsafe {
-        device
+            .expect("create_texture_2d_array(atlas)");
+        let view = device
             .create_texture_view(
-                &atlas_texture,
+                &texture,
                 &TextureViewDescriptor {
                     label: Some("horizon_client_atlas_view"),
                     format: wgpu_types::TextureFormat::Rgba8Unorm,
@@ -2769,8 +2781,12 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                     range: wgpu_types::ImageSubresourceRange::default(),
                 },
             )
-            .expect("create_texture_view(atlas)")
+            .expect("create_texture_view(atlas)");
+        (texture, view)
     };
+    let (atlas_texture, atlas_view) = make_atlas("horizon_client_atlas_2d_array");
+    #[cfg(feature = "render-diagnostics")]
+    let (control_texture, control_view) = make_atlas("horizon_atlas_control");
     let sampler = unsafe {
         device
             .create_sampler(&SamplerDescriptor {
@@ -2858,7 +2874,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             .expect("create_buffer(staging)")
     };
 
-    let bind_group = unsafe {
+    let make_atlas_group = |view| unsafe {
         device
             .create_bind_group(&BindGroupDescriptor {
                 label: Some("horizon_client_bg"),
@@ -2870,7 +2886,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 )],
                 samplers: &[&sampler],
                 textures: &[TextureBinding {
-                    view: &atlas_view,
+                    view,
                     usage: wgpu_types::TextureUses::RESOURCE,
                 }],
                 entries: &[
@@ -2895,6 +2911,9 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             })
             .expect("create_bind_group")
     };
+    let bind_group = make_atlas_group(&atlas_view);
+    #[cfg(feature = "render-diagnostics")]
+    let control_group = make_atlas_group(&control_view);
 
     let mut encoder = unsafe {
         device
@@ -2933,6 +2952,13 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         });
     }
 
+    #[cfg(feature = "render-diagnostics")]
+    let control_copy = {
+        let mut copy = tex_copies[0].clone();
+        copy.buffer_layout.offset = init_upload_bytes.len() as u64;
+        init_upload_bytes.extend_from_slice(&PROBE_CONTROL_TEXEL.repeat(16 * 16));
+        copy
+    };
     if let Err(e) = unsafe { write_staging_bytes(&device, &staging_buffer, &init_upload_bytes) } {
         log_line(&format!("FAIL Initial staging buffer write failed: {e}"));
         return 15;
@@ -2943,6 +2969,12 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             .begin_encoding(Some("horizon_client_init_upload"))
             .expect("begin_encoding(init)");
         encoder.copy_buffer_to_texture(&staging_buffer, &atlas_texture, tex_copies.into_iter());
+        #[cfg(feature = "render-diagnostics")]
+        encoder.copy_buffer_to_texture(
+            &staging_buffer,
+            &control_texture,
+            std::iter::once(control_copy),
+        );
         let cmd_buf = encoder.end_encoding().expect("end_encoding(init)");
         queue
             .submit(&[&cmd_buf], &[], (&mut fence, fence_value))
@@ -3629,6 +3661,9 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             }
             #[cfg(feature = "render-diagnostics")]
             if frames_rendered == 1 {
+                encoder.set_render_pipeline(&probe_pipelines[1]);
+                encoder.set_bind_group(&pipeline_layout, 0, &control_group, &[]);
+                encoder.draw(36, 6, 0, 1);
                 for (start, pipeline) in [
                     (0, &probe_pipelines[0]),
                     (6, &probe_pipelines[1]),
@@ -3672,6 +3707,9 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                             ));
                         },
                     );
+                    log_line(&format!(
+                        "GLES_ATLAS_HAL_CONTROL frame=2 sample=bottom_center expected={PROBE_CONTROL_TEXEL:?}"
+                    ));
                     let expected = probe_texture();
                     let mut actual = [0; 1024];
                     let (status, error) = device.diagnostic_atlas_layer(
@@ -3867,6 +3905,12 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         device.destroy_sampler(sampler);
         device.destroy_texture_view(atlas_view);
         device.destroy_texture(atlas_texture);
+        #[cfg(feature = "render-diagnostics")]
+        {
+            device.destroy_bind_group(control_group);
+            device.destroy_texture_view(control_view);
+            device.destroy_texture(control_texture);
+        }
         device.destroy_render_pipeline(render_pipeline);
         device.destroy_render_pipeline(hand_pipeline);
         #[cfg(feature = "render-diagnostics")]
