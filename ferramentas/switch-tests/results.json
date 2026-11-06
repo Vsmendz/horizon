@@ -279,7 +279,7 @@
       "test": "test8e_gles_atlas_fix",
       "build": "passed",
       "link": "passed",
-      "hardware": "pending",
+      "hardware": "user_confirmed",
       "file": "ferramentas/switch-tests/out/test8e_gles_atlas_fix.nro",
       "bytes": 57946797,
       "sha256": "78554fb987fd8d81116d0c0c69bfe2d4d6ab1be999c3629dc90560bb1dc338c7",
@@ -288,7 +288,9 @@
       "build_log": "ferramentas/switch-tests/out/test8e_gles_atlas_fix.build.log",
       "offline_log": "ferramentas/switch-tests/out/test8e_gles_atlas_fix.offline.log",
       "test_log": "ferramentas/switch-tests/out/test8e.gles.log",
-      "runtime_log": "sdmc:/switch/horizon-tests/test8e_gles_atlas_fix.log"
+      "runtime_log": "sdmc:/switch/horizon-tests/test8e_gles_atlas_fix.log",
+      "hardware_log": "test8e_gles_atlas_fix.log",
+      "confirmation": "Textured terrain and hotbar passed. GLES 2D array and exact framebuffer controls passed. 5282 frames, eight breaks, eleven placements, three saved chunks, asynchronous streaming, RESULT=0 and RETURN 0. Water appeared opaque."
     }
   ]
 }
