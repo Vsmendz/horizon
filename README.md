@@ -65,6 +65,49 @@ In the Rust client, with vanilla assets and no mods or shaders:
   </tr>
 </table>
 
+## Nintendo Switch Port (Experimental Work in Progress)
+
+An ongoing port of Horizon to the Nintendo Switch (AArch64 / Horizon OS), targeting native 60 FPS gameplay using OpenGL ES 3.2 via `wgpu-hal`, libnx, and Rust `std`.
+
+> **Status**: In active development. Milestones 1 through 7 have been physically verified on hardware. Milestone 8 (integrating the full Java 26.3 vanilla world generator into the playable async-streaming client) is offline-validated and awaiting physical hardware validation.
+
+### Architecture & Requirements
+- **Target OS**: Nintendo Switch Horizon OS (`aarch64-nintendo-switch-newlib` / libnx).
+- **Toolchain**: devkitPro (`devkitA64`, `libnx`, `portlibs/switch` EGL/GLES) + Rust nightly with custom target spec (`-Zbuild-std=core,alloc,std,panic_abort`).
+- **Build Environment**: WSL Ubuntu on Windows 11.
+- **Required Game Assets**: Official Minecraft Java 26.3 client/server JARs (never distributed; prepared locally from your licensed copy using `tools/` and `prepare_switch_assets.py`).
+
+### How to Build
+From the repository root inside WSL:
+```sh
+# 1. Setup devkitPro environment
+source ferramentas/env.sh
+
+# 2. Run offline streaming test suites (both vanilla 26.3 and legacy)
+python3 ferramentas/switch-tests/test_streaming.py --vanilla
+python3 ferramentas/switch-tests/test_streaming.py
+
+# 3. Build test executable and package RomFS into NRO
+CARGO_NET_OFFLINE=true python3 ferramentas/switch-tests/build.py test8_vanilla_streaming
+```
+Artifacts are emitted to `ferramentas/switch-tests/out/`:
+- `test8_vanilla_streaming.nro`
+- `test8_vanilla_streaming.elf`
+- `test8_vanilla_streaming.map`
+
+### Deploying to Hardware
+Send the NRO to a Switch running the Homebrew Menu (NetLoader) over your local network:
+```sh
+ferramentas/devkitpro/tools/bin/nxlink -a <SWITCH_IP> ferramentas/switch-tests/out/test8_vanilla_streaming.nro
+```
+Runtime logs are written directly to the SD card at:
+`sdmc:/switch/horizon-tests/test8_vanilla_streaming.log`
+
+### Current Capabilities & Known Limitations
+- **What works on hardware (Tests 1–7)**: EGL/GLES3 initialization, controller input, textured voxel rendering, first-person physics/camera, raycast block breaking/placing, persistent Anvil `.mca` saves, async chunk streaming worker (Test 6B), and exact Java 26.3 chunk generation matching reference fingerprints and NBT round trip (Test 7).
+- **Test 8 (Awaiting physical confirmation)**: Integrates full vanilla terrain generation (-64 to 319 height, 24 sections) with the playable async client, isolated in `sdmc:/switch/horizon/saves/switch_vanilla_test8/`.
+- **Known Limitations**: Cold startup time takes ~60 seconds on flash storage while loading and deserializing full worldgen registries and tables (under optimization); singleplayer GUI/inventories and audio remain pending later milestones.
+
 ## Host a server
 
 The launcher's **Servers** page creates, starts, backs up and updates a server, and invites friends over Tailscale. On a VPS, `horizon-server` installs with one command and needs no Java. [Host a server](https://playhorizon.dev/docs/hosting) ([reference](docs/hosting.md)).
