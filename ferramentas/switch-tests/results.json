@@ -228,7 +228,7 @@
       "test": "test8b_vanilla_render_fix",
       "build": "passed",
       "link": "passed",
-      "hardware": "pending",
+      "hardware": "user_confirmed_rendering_issue",
       "file": "ferramentas/switch-tests/out/test8b_vanilla_render_fix.nro",
       "bytes": 57909933,
       "sha256": "628a399b73905d7c4b70f82f3b2ada639fb519d17be9c4fe08f68ad65a6af540",
@@ -237,7 +237,24 @@
       "build_log": "ferramentas/switch-tests/out/test8b_vanilla_render_fix.build.log",
       "offline_log": "ferramentas/switch-tests/out/test8b_vanilla_render_fix.offline.log",
       "test_log": "ferramentas/switch-tests/out/test8b.gles.log",
-      "runtime_log": "sdmc:/switch/horizon-tests/test8b_vanilla_render_fix.log"
+      "runtime_log": "sdmc:/switch/horizon-tests/test8b_vanilla_render_fix.log",
+      "hardware_log": "test8b_vanilla_render_fix.log",
+      "confirmation": "Black terrain and missing hotbar persist. Atlas: 42 layers, zero mismatches. Three opaque-black samples; sky control missing. RESULT=0."
+    },
+    {
+      "test": "test8c_gles_pipeline_probe",
+      "build": "passed",
+      "link": "passed",
+      "hardware": "pending",
+      "file": "ferramentas/switch-tests/out/test8c_gles_pipeline_probe.nro",
+      "bytes": 57918125,
+      "sha256": "10a81bdcc68ded6db72f39cacdeeee99992befb60a07d3ff2147e5bbadc4ca47",
+      "elf": "ferramentas/switch-tests/out/test8c_gles_pipeline_probe.elf",
+      "elf_sha256": "934e6b9d52bbd55f071a2760bf946810d8a72e52421e28de3989f729ef1f19f9",
+      "build_log": "ferramentas/switch-tests/out/test8c_gles_pipeline_probe.build.log",
+      "offline_log": "ferramentas/switch-tests/out/test8c_gles_pipeline_probe.offline.log",
+      "test_log": "ferramentas/switch-tests/out/test8c.gles.log",
+      "runtime_log": "sdmc:/switch/horizon-tests/test8c_gles_pipeline_probe.log"
     }
   ]
 }

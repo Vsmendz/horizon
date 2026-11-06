@@ -70,3 +70,9 @@ Test 8B is ready for physical diagnostics. The Linux GLES test passed with the r
 - Artifact `out/test8b_vanilla_render_fix.nro`, SHA-256 `628a399b73905d7c4b70f82f3b2ada639fb519d17be9c4fe08f68ad65a6af540`. All 14 previous NRO hashes verified. The 8B RomFS matches Test 8 byte for byte.
 - Host tests are in `out/test8b.gles.log` (24 passed, two ignored) and `out/test8b.legacy.log` (14 passed, one ignored). Detailed WSL timing data is in `out/test8b.block-tables.log`. The console needs its own substage timings before changing the loader.
 - Run the uploader without its log callback and retrieve `sdmc:/switch/horizon-tests/test8b_vanilla_render_fix.log`. See `REPORT.md` for commands and diagnostics.
+
+The 8B hardware run still shows black terrain and a missing hotbar. All 42 atlas layers matched; its three opaque-black samples lacked a known sky control. The production WGSL matches the 6B, 8 and 8B NROs byte for byte. The Test 8 change in atlas size, mesh construction and staging is documented in `REPORT.md`.
+
+8C adds a known blue clear frame and a five-panel frame with solid, sampled, lit, HUD and direct texel draws. It logs samples after the world pass, after the HUD pass and after the window blit. The shared readback helper and the panel colors passed in Linux GLES. The next physical run uses `test8c_gles_pipeline_probe.nro` and saves `sdmc:/switch/horizon-tests/test8c_gles_pipeline_probe.log`. The cause on Switch remains open pending these samples.
+
+8C passed the AArch64 and NRO checks. Its RomFS matches Test 8, and all 15 earlier NRO hashes match. SHA-256 `10a81bdcc68ded6db72f39cacdeeee99992befb60a07d3ff2147e5bbadc4ca47`.

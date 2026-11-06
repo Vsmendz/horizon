@@ -425,3 +425,27 @@ On Switch, wait for the world to render, look at the ground and hotbar, cross a 
 
 The WSL timing probe read the collision, property and support tables in 33, 51 and 32 ms respectively. NBT decoding plus registry validation took 52, 91 and 48 ms. Constructing the collision table from the decoded data took 8 ms. The three files total 21,818,500 bytes. The timings are from the host and do not attribute the 55.7 seconds observed on Switch. Keep the table validation and data intact until equivalent on-device measurements separate I/O, decoding and runtime table construction.
 
+## Test 8C — Controlled GLES render and readback
+
+The 8B console log reports a byte-for-byte match for all 42 atlas layers. The center, hotbar and lower-scene samples were opaque black on frames 1 and 180. Those coordinates did not include a controlled clear color. The 8B photograph still shows blue sky, so the three samples alone cannot distinguish black draw output from a readback or presentation problem. The 8B session restored the player, registered one block break and five placements, saved one column and exited with `RESULT=0`.
+
+The 6B, 8 and 8B NROs contain byte-identical production WGSL (SHA-256 `e50aeb676222301ff1f9fd4d6e3053d2dcba6140f4445f46e7541fd8cdd0edd0`). The 6B working path used the prototype voxel enum and per-column CPU meshes from 32-block Perlin terrain. Test 8 uses registry-backed vanilla sections, maps original block states to baked visuals by name with a stone fallback, and caches one mesh per 16-block section. Both paths resolve a model quad's sprite through the layer map and submit non-indexed triangles with the same shader inputs. The hardware logs identify the same NV120 adapter, EGL version and Depth24Plus path, while models and atlas layers grew from 10 and 15 to 33 and 42. Assets moved from SD to RomFS, and Test 8 adds section frustum culling and a bounded combined upload. Test 8B replaces that combined terrain upload with resident section buffers, yet the symptom persists. The earlier 6B source snapshot is absent from the checked-in history, so the comparison uses the original binary, hardware logs and the surviving legacy code path.
+
+The 8C startup submits one clear-only frame followed by five panels using the game's vertex buffer, atlas, camera uniform, pipeline layout and two render passes. It temporarily writes a two-color texture to the white atlas layer for the panel frame and restores that layer before gameplay. The SD log records `GLES_WORLD` after the terrain pass, `GLES_PRE` after the HUD pass, and `GLES_POST` after the Y-flipped blit and before EGL swaps the window. It also records EGL window dimensions and framebuffer ID, status, selected read buffer, coordinates, GL errors and RGBA values. The probe waits for GL work and temporarily resets pixel-pack state.
+
+Expected frame 1 samples are sky blue `[32, 96, 224, 255]`. Frame 2 sample order is upper sky, lower sky, solid, sampled texture, production lighting, solid HUD, direct texel, center and hotbar. The five panel colors in order are green `[64, 191, 64, 255]`, orange `[224, 64, 32, 255]`, shaded orange `[112, 32, 16, 255]`, purple `[191, 64, 191, 255]` and cyan `[32, 192, 224, 255]`. The HUD panel appears after the HUD pass. Frames 3 and 180 sample the normal scene.
+
+The shared readback helper passed on llvmpipe with a real EGL pbuffer, an RGBA8 renderbuffer, a known blue clear color and an asymmetric marker. It returned matching pre- and post-blit colors at flipped coordinates and restored the previous read framebuffer and pixel-pack state. The same Naga fragment entries and panel vertices returned the expected colors in the host pixel test. The Linux test issues direct GLES calls. The Switch build exercises the client HAL command encoder and physical driver.
+
+- The Linux client suite passed 24 tests with two ignored, including the controlled GLES cases and the vanilla streaming suite. The legacy streaming suite passed 14 tests with one ignored. Logs are in `out/test8c.gles.log` and `out/test8c.legacy.log`.
+- Rust release compilation and AArch64 link passed with zero undefined symbols and no dynamic dependencies. NRO0 and ASET bounds passed. The RomFS matches Test 8 byte for byte, and all 15 earlier NRO hashes match. Verification is in `out/test8c_gles_pipeline_probe.offline.log`.
+- `out/test8c_gles_pipeline_probe.nro` is 57,918,125 bytes. SHA-256 `10a81bdcc68ded6db72f39cacdeeee99992befb60a07d3ff2147e5bbadc4ca47`. The first failing stage is pending physical validation.
+
+```sh
+source ferramentas/env.sh
+CARGO_NET_OFFLINE=true python3 ferramentas/switch-tests/build.py test8c_gles_pipeline_probe
+ferramentas/devkitpro/tools/bin/nxlink -a <SWITCH_IP> ferramentas/switch-tests/out/test8c_gles_pipeline_probe.nro
+```
+
+On Switch, allow the game to run for at least five seconds after the game view appears, then exit with PLUS and copy `sdmc:/switch/horizon-tests/test8c_gles_pipeline_probe.log`. Compare the known sky and panel samples first, then use the first stage with unexpected RGBA or a GL error to narrow the failure.
+
