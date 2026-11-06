@@ -76,3 +76,9 @@ The 8B hardware run still shows black terrain and a missing hotbar. All 42 atlas
 8C adds a known blue clear frame and a five-panel frame with solid, sampled, lit, HUD and direct texel draws. It logs samples after the world pass, after the HUD pass and after the window blit. The shared readback helper and the panel colors passed in Linux GLES. The next physical run uses `test8c_gles_pipeline_probe.nro` and saves `sdmc:/switch/horizon-tests/test8c_gles_pipeline_probe.log`. The cause on Switch remains open pending these samples.
 
 8C passed the AArch64 and NRO checks. Its RomFS matches Test 8, and all 15 earlier NRO hashes match. SHA-256 `10a81bdcc68ded6db72f39cacdeeee99992befb60a07d3ff2147e5bbadc4ca47`.
+
+The 8C hardware log confirms the intermediate readback. The known blue clear, green solid geometry and purple solid HUD matched. Both filtered texture panels and the direct texel panel failed despite the 42 exact atlas attachment readbacks. The EGL window size query returned zero, so no window readback was captured. The failure is already present before the window blit.
+
+8D adds a fixed layer-0 texel panel and records the sampler uniform, unit, texture and sampler objects, mip range, and view range used by the HAL. After the first normal frame it tests the same atlas and isolated GLES controls with a plain 2D texture and 15- and 42-layer arrays. See `REPORT.md` for the interpretation and hardware procedure. The cause is pending the 8D console log.
+
+8D passed the Linux GLES and vanilla suite (24 passed, two ignored), legacy streaming (14 passed, one ignored), and static AArch64 and NRO checks. The RomFS matches Test 8 byte for byte, and all 16 earlier NRO hashes match. Artifact `out/test8d_gles_atlas_probe.nro`, SHA-256 `f51d9cbb672a0622821c4ecdc9b77bb6dac4310e25c4927da02e011680b203fc`.

@@ -449,3 +449,27 @@ ferramentas/devkitpro/tools/bin/nxlink -a <SWITCH_IP> ferramentas/switch-tests/o
 
 On Switch, allow the game to run for at least five seconds after the game view appears, then exit with PLUS and copy `sdmc:/switch/horizon-tests/test8c_gles_pipeline_probe.log`. Compare the known sky and panel samples first, then use the first stage with unexpected RGBA or a GL error to narrow the failure.
 
+## Test 8D — GLES atlas access
+
+On the physical Switch, 8C read the exact blue clear and both solid panels from the complete 1280×720 intermediate framebuffer with GL error 0. The unlit and lit atlas panels returned `[0, 0, 0, 255]`, and `textureLoad` returned `[0, 0, 0, 0]` before the HUD and window blit. The startup attachment readback matched all 42 original layers. The black output is isolated to the textured draw path. Attachment readback establishes texture contents, while a draw also needs the correct texture unit, complete mip state and working shader access. The EGL window size was zero, which skipped the post-blit probe. 8D retries before each sampled presentation and logs the libnx NWindow dimensions as a fallback.
+
+The 6B and 8 logs report the same NV120 adapter, EGL 1.4, D2Array, Depth24Plus and HAL bind-group path. The production WGSL is byte-identical. In the checked-in renderer, WGSL bindings 0, 1 and 2 are the camera uniform, D2Array view and nearest sampler. The HAL maps them to separate namespaces, so the first texture should occupy GLES unit 0. The GLES view shares the texture object and covers the entire layer range. The queue applies mip base and maximum 0 and binds the sampler for `textureSample`; the `textureLoad` pipeline has no WGSL sampler mapping. The 6B log shows 15 layers and two animations, compared with 42 layers and three animations in Test 8. Its standalone client source snapshot is absent from Git. The larger array, the additional animated uploads and the vanilla model mapping are established differences. The relative effect of those differences on NV120 remains to be measured.
+
+- Frame 2 keeps the original panels and adds a center panel for `textureLoad` at `(0, 0)`, layer 0, mip 0. This draw has no UV or layer vertex input. Its expected RGBA appears in `GLES_ATLAS_BIND`. Both load panels and the sample panels use the real atlas view. `GLES_ATLAS_PANEL` checks that the two-color pattern actually reached the last layer during that frame.
+- `GLES_ATLAS_BIND` reports the linked program's active sampler uniform and unit, current program, expected and actual texture object, view ranges, mip parameters, filters and level dimensions. It runs after the frame 2 fixed load and the frame 3 normal terrain/HUD draw.
+- After frame 3, `GLES_ATLAS_NATIVE` uses handwritten GLSL ES and draws into a separate RGBA8 framebuffer. It samples the same atlas object and control textures with both `texelFetch` and `texture`. Cases compare a 2D texture, immutable 15- and 42-layer arrays and a mutable 42-layer array. Array checks cover layers 0, 14, 15, 31, 32 and the last available layer. Unit 0 is tested with and without the production sampler object, and unit 1 is tested with it. The production atlas is also tested with nearest filtering on the texture object. Its parameters are restored after each case. Frame 4 and frame 180 sample normal gameplay.
+
+Compare the fixed and attribute-driven load panels first. A fixed-load pass with an attribute-driven failure narrows the fault to UV or layer inputs. If native sampling of the same atlas passes, inspect the HAL binding snapshot and the difference between the generated and handwritten GLSL. If the native arrays fail but the 2D control passes, compare the array depths, storage modes, units and sampler settings. A pass for the new 42-layer control with a failure for the production atlas narrows the next check to the production object's state and upload history. Record the first divergent case before changing the production render path.
+
+- The Linux EGL test uses Mesa llvmpipe. The shared native probe returned zero mismatches and GL errors across the texture cases. The Naga-generated fixed load returned the independent expected color `[88, 144, 200, 255]`. The client suite passed 24 tests with two ignored, including the vanilla oracle and save regression. Legacy streaming passed 14 tests with one ignored. Logs are in `out/test8d.gles.log` and `out/test8d.legacy.log`.
+- Rust release and AArch64 link passed with zero undefined symbols and no dynamic dependencies. NRO and ASET bounds passed, and the RomFS is byte-identical to Test 8. All 16 earlier NRO hashes match, including the physical 8C artifact. See `out/test8d_gles_atlas_probe.offline.log`.
+- Artifact `out/test8d_gles_atlas_probe.nro`, 57,938,605 bytes. SHA-256 `f51d9cbb672a0622821c4ecdc9b77bb6dac4310e25c4927da02e011680b203fc`. Physical validation is pending.
+
+```sh
+source ferramentas/env.sh
+CARGO_NET_OFFLINE=true python3 ferramentas/switch-tests/build.py test8d_gles_atlas_probe
+ferramentas/devkitpro/tools/bin/nxlink -a <SWITCH_IP> ferramentas/switch-tests/out/test8d_gles_atlas_probe.nro
+```
+
+On Switch, wait at least five seconds after the game view appears, then press PLUS and copy `sdmc:/switch/horizon-tests/test8d_gles_atlas_probe.log`. The startup panels last one frame and the SD log records their colors.
+

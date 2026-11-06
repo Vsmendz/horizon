@@ -245,7 +245,7 @@
       "test": "test8c_gles_pipeline_probe",
       "build": "passed",
       "link": "passed",
-      "hardware": "pending",
+      "hardware": "user_confirmed_rendering_issue",
       "file": "ferramentas/switch-tests/out/test8c_gles_pipeline_probe.nro",
       "bytes": 57918125,
       "sha256": "10a81bdcc68ded6db72f39cacdeeee99992befb60a07d3ff2147e5bbadc4ca47",
@@ -254,7 +254,24 @@
       "build_log": "ferramentas/switch-tests/out/test8c_gles_pipeline_probe.build.log",
       "offline_log": "ferramentas/switch-tests/out/test8c_gles_pipeline_probe.offline.log",
       "test_log": "ferramentas/switch-tests/out/test8c.gles.log",
-      "runtime_log": "sdmc:/switch/horizon-tests/test8c_gles_pipeline_probe.log"
+      "runtime_log": "sdmc:/switch/horizon-tests/test8c_gles_pipeline_probe.log",
+      "hardware_log": "test8b_vanilla_render_fix.log",
+      "confirmation": "Blue clear and both solid panels match. Texture panels return black, and textureLoad returns transparent black in the intermediate framebuffer. All 42 atlas attachments match. RESULT=0."
+    },
+    {
+      "test": "test8d_gles_atlas_probe",
+      "build": "passed",
+      "link": "passed",
+      "hardware": "pending",
+      "file": "ferramentas/switch-tests/out/test8d_gles_atlas_probe.nro",
+      "bytes": 57938605,
+      "sha256": "f51d9cbb672a0622821c4ecdc9b77bb6dac4310e25c4927da02e011680b203fc",
+      "elf": "ferramentas/switch-tests/out/test8d_gles_atlas_probe.elf",
+      "elf_sha256": "1099f7307673b6a186f831e7b62f4ba790a0962aa6c1b6954e4afefedf4630d1",
+      "build_log": "ferramentas/switch-tests/out/test8d_gles_atlas_probe.build.log",
+      "offline_log": "ferramentas/switch-tests/out/test8d_gles_atlas_probe.offline.log",
+      "test_log": "ferramentas/switch-tests/out/test8d.gles.log",
+      "runtime_log": "sdmc:/switch/horizon-tests/test8d_gles_atlas_probe.log"
     }
   ]
 }
