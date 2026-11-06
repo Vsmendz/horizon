@@ -262,7 +262,7 @@
       "test": "test8d_gles_atlas_probe",
       "build": "passed",
       "link": "passed",
-      "hardware": "pending",
+      "hardware": "user_confirmed_rendering_issue",
       "file": "ferramentas/switch-tests/out/test8d_gles_atlas_probe.nro",
       "bytes": 57938605,
       "sha256": "f51d9cbb672a0622821c4ecdc9b77bb6dac4310e25c4927da02e011680b203fc",
@@ -271,7 +271,24 @@
       "build_log": "ferramentas/switch-tests/out/test8d_gles_atlas_probe.build.log",
       "offline_log": "ferramentas/switch-tests/out/test8d_gles_atlas_probe.offline.log",
       "test_log": "ferramentas/switch-tests/out/test8d.gles.log",
-      "runtime_log": "sdmc:/switch/horizon-tests/test8d_gles_atlas_probe.log"
+      "runtime_log": "sdmc:/switch/horizon-tests/test8d_gles_atlas_probe.log",
+      "hardware_log": "test8b_vanilla_render_fix.log",
+      "confirmation": "Native controls pass. The client atlas is GL_TEXTURE_CUBE_MAP_ARRAY (0x9009) and unit 0 has no GL_TEXTURE_2D_ARRAY binding for sampler2DArray. RESULT=0."
+    },
+    {
+      "test": "test8e_gles_atlas_fix",
+      "build": "passed",
+      "link": "passed",
+      "hardware": "pending",
+      "file": "ferramentas/switch-tests/out/test8e_gles_atlas_fix.nro",
+      "bytes": 57946797,
+      "sha256": "78554fb987fd8d81116d0c0c69bfe2d4d6ab1be999c3629dc90560bb1dc338c7",
+      "elf": "ferramentas/switch-tests/out/test8e_gles_atlas_fix.elf",
+      "elf_sha256": "1749adeb89ea0a45a3cf63733b621caea47ee62c5b73155dc5dc06cd07b55b0d",
+      "build_log": "ferramentas/switch-tests/out/test8e_gles_atlas_fix.build.log",
+      "offline_log": "ferramentas/switch-tests/out/test8e_gles_atlas_fix.offline.log",
+      "test_log": "ferramentas/switch-tests/out/test8e.gles.log",
+      "runtime_log": "sdmc:/switch/horizon-tests/test8e_gles_atlas_fix.log"
     }
   ]
 }

@@ -473,3 +473,27 @@ ferramentas/devkitpro/tools/bin/nxlink -a <SWITCH_IP> ferramentas/switch-tests/o
 
 On Switch, wait at least five seconds after the game view appears, then press PLUS and copy `sdmc:/switch/horizon-tests/test8d_gles_atlas_probe.log`. The startup panels last one frame and the SD log records their colors.
 
+## Test 8E — Explicit GLES 2D array allocation
+
+The physical 8D log records `target=0x9009 bound=None expected_texture=NativeTexture(1)` for both the fixed fetch and normal terrain program. `0x9009` is `GL_TEXTURE_CUBE_MAP_ARRAY`. The linked `sampler2DArray` uniform selects unit 0 and reads its `GL_TEXTURE_2D_ARRAY` binding, which is empty. The HAL binds the recorded native target. The render-pass end and queue submission leave texture bindings intact, so the snapshot still describes the state used by those draws. Layer attachment readback works with cube array layer-faces and therefore matched all the uploaded bytes.
+
+The generic GLES texture constructor infers cube compatibility from square dimensions, a sample count of one and a multiple of six layers. The 15-layer 6B atlas selects `GL_TEXTURE_2D_ARRAY`. The 42-layer Test 8 atlas selects cube-array storage. Creating the D2Array view clones the same native object and target, and the bind group carries that target to the queue. Upload and attachment readback used the allocated object successfully. Destruction occurs after the draw loop. The 8D native diagnostic never reallocated the atlas. It attempted to bind that same cube-array name to a different target, which GLES rejects with `GL_INVALID_OPERATION`. The revised diagnostic checks the native target first and changes parameters only on its own control textures. [OpenGL ES 3.2 specification, §§ 8.1 and 9.4](https://registry.khronos.org/OpenGL/specs/es/3.2/es_spec_3.2.pdf)
+
+The client now explicitly allocates `GL_TEXTURE_2D_ARRAY` through the existing HAL allocator. The texture remains RGBA8 with its original pixels, layer order and mip level 0. The sampler remains `GL_NEAREST_MIPMAP_NEAREST` (`9984`). With base and max both 0, the complete mip range is level 0 alone. The production WGSL and shader bindings remain the same. The 8D hardware controls already sampled the single-mip arrays successfully with this sampler. [OpenGL ES 3.2 specification, §§ 8.14.3 and 8.17](https://registry.khronos.org/OpenGL/specs/es/3.2/es_spec_3.2.pdf)
+
+The Linux GLES regression creates both sizes through the generic HAL allocator, verifies the old target selection and reproduces `GL_INVALID_OPERATION` when rebinding the 42-layer cube array as a 2D array. It then allocates the same descriptor explicitly as a 2D array and verifies the actual native texture with Naga-generated sampling, fixed fetch and direct GLES controls.
+
+Frame 2 adds a bottom-center panel at the last `GLES_WORLD`/`GLES_PRE`/`GLES_POST` sample. It samples a separate 42-layer RGBA8 control uploaded via the HAL staging encoder, using the same pipeline, sampler, view descriptor and bind-group layout as the production atlas. Expected RGBA is `[92, 212, 56, 255]`. The center panel reads the original atlas layer 0 and logs its expected color. The texture, lit and high-layer fetch panels retain their expected orange, shaded orange and cyan. `GLES_ATLAS_BIND` should show target `0x8c1a`, a matching bound and expected texture, and mip range 0 through 0. Normal frames should show the original textures on terrain and the hotbar. The 8D NWindow fallback already confirmed correct post-blit reads at 1280×720 on the console.
+
+- The Linux client suite passed 24 tests with two ignored, including the GLES regression, vanilla oracle and save coverage. Legacy streaming passed 14 tests with one ignored. See `out/test8e.gles.log` and `out/test8e.legacy.log`.
+- Rust release and AArch64 link passed with zero undefined symbols and no dynamic dependencies. The NRO and ASET ranges are valid. The production WGSL matches 8D byte for byte, the RomFS matches Test 8, and all 17 earlier NRO hashes match. See `out/test8e_gles_atlas_fix.offline.log`.
+- Artifact `out/test8e_gles_atlas_fix.nro`, 57,946,797 bytes, SHA-256 `78554fb987fd8d81116d0c0c69bfe2d4d6ab1be999c3629dc90560bb1dc338c7`. Physical validation is pending.
+
+```sh
+source ferramentas/env.sh
+CARGO_NET_OFFLINE=true python3 ferramentas/switch-tests/build.py test8e_gles_atlas_fix
+ferramentas/devkitpro/tools/bin/nxlink -a <SWITCH_IP> ferramentas/switch-tests/out/test8e_gles_atlas_fix.nro
+```
+
+On Switch, inspect the terrain, held item and hotbar, cross a chunk boundary, and press PLUS. Copy `sdmc:/switch/horizon-tests/test8e_gles_atlas_fix.log` to the project. The diagnostic panels last a single frame and their sampled colors are recorded on the SD card.
+
