@@ -64,6 +64,70 @@ pub enum VoxelBlock {
     MossBlock,
     #[cfg(feature = "vanilla")]
     DeepslateDiamondOre,
+    #[cfg(feature = "vanilla-visuals")]
+    BirchLog,
+    #[cfg(feature = "vanilla-visuals")]
+    BirchLeaves,
+    #[cfg(feature = "vanilla-visuals")]
+    SpruceLog,
+    #[cfg(feature = "vanilla-visuals")]
+    SpruceLeaves,
+    #[cfg(feature = "vanilla-visuals")]
+    DarkOakLog,
+    #[cfg(feature = "vanilla-visuals")]
+    DarkOakLeaves,
+    #[cfg(feature = "vanilla-visuals")]
+    JungleLog,
+    #[cfg(feature = "vanilla-visuals")]
+    JungleLeaves,
+    #[cfg(feature = "vanilla-visuals")]
+    AcaciaLog,
+    #[cfg(feature = "vanilla-visuals")]
+    AcaciaLeaves,
+    #[cfg(feature = "vanilla-visuals")]
+    CherryLog,
+    #[cfg(feature = "vanilla-visuals")]
+    CherryLeaves,
+    #[cfg(feature = "vanilla-visuals")]
+    MangroveLog,
+    #[cfg(feature = "vanilla-visuals")]
+    MangroveLeaves,
+    #[cfg(feature = "vanilla-visuals")]
+    OakSapling,
+    #[cfg(feature = "vanilla-visuals")]
+    ShortGrass,
+    #[cfg(feature = "vanilla-visuals")]
+    Fern,
+    #[cfg(feature = "vanilla-visuals")]
+    DeadBush,
+    #[cfg(feature = "vanilla-visuals")]
+    Dandelion,
+    #[cfg(feature = "vanilla-visuals")]
+    Poppy,
+    #[cfg(feature = "vanilla-visuals")]
+    BlueOrchid,
+    #[cfg(feature = "vanilla-visuals")]
+    Allium,
+    #[cfg(feature = "vanilla-visuals")]
+    AzureBluet,
+    #[cfg(feature = "vanilla-visuals")]
+    OxeyeDaisy,
+    #[cfg(feature = "vanilla-visuals")]
+    Cornflower,
+    #[cfg(feature = "vanilla-visuals")]
+    LilyOfTheValley,
+    #[cfg(feature = "vanilla-visuals")]
+    BrownMushroom,
+    #[cfg(feature = "vanilla-visuals")]
+    RedMushroom,
+    #[cfg(feature = "vanilla-visuals")]
+    SugarCane,
+    #[cfg(feature = "vanilla-visuals")]
+    LilyPad,
+    #[cfg(feature = "vanilla-visuals")]
+    Cactus,
+    #[cfg(feature = "vanilla-visuals")]
+    Glass,
 }
 
 impl VoxelBlock {
@@ -133,6 +197,42 @@ impl VoxelBlock {
         Self::DeepslateDiamondOre,
     ];
 
+    #[cfg(feature = "vanilla-visuals")]
+    pub const VISUAL_MODELS: [Self; 32] = [
+        Self::BirchLog,
+        Self::BirchLeaves,
+        Self::SpruceLog,
+        Self::SpruceLeaves,
+        Self::DarkOakLog,
+        Self::DarkOakLeaves,
+        Self::JungleLog,
+        Self::JungleLeaves,
+        Self::AcaciaLog,
+        Self::AcaciaLeaves,
+        Self::CherryLog,
+        Self::CherryLeaves,
+        Self::MangroveLog,
+        Self::MangroveLeaves,
+        Self::OakSapling,
+        Self::ShortGrass,
+        Self::Fern,
+        Self::DeadBush,
+        Self::Dandelion,
+        Self::Poppy,
+        Self::BlueOrchid,
+        Self::Allium,
+        Self::AzureBluet,
+        Self::OxeyeDaisy,
+        Self::Cornflower,
+        Self::LilyOfTheValley,
+        Self::BrownMushroom,
+        Self::RedMushroom,
+        Self::SugarCane,
+        Self::LilyPad,
+        Self::Cactus,
+        Self::Glass,
+    ];
+
     pub fn block_name(self) -> &'static str {
         match self {
             Self::Air => "air",
@@ -192,6 +292,70 @@ impl VoxelBlock {
             Self::MossBlock => "moss_block",
             #[cfg(feature = "vanilla")]
             Self::DeepslateDiamondOre => "deepslate_diamond_ore",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::BirchLog => "birch_log",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::BirchLeaves => "birch_leaves",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::SpruceLog => "spruce_log",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::SpruceLeaves => "spruce_leaves",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::DarkOakLog => "dark_oak_log",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::DarkOakLeaves => "dark_oak_leaves",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::JungleLog => "jungle_log",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::JungleLeaves => "jungle_leaves",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::AcaciaLog => "acacia_log",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::AcaciaLeaves => "acacia_leaves",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::CherryLog => "cherry_log",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::CherryLeaves => "cherry_leaves",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::MangroveLog => "mangrove_log",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::MangroveLeaves => "mangrove_leaves",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::OakSapling => "oak_sapling",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::ShortGrass => "short_grass",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::Fern => "fern",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::DeadBush => "dead_bush",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::Dandelion => "dandelion",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::Poppy => "poppy",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::BlueOrchid => "blue_orchid",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::Allium => "allium",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::AzureBluet => "azure_bluet",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::OxeyeDaisy => "oxeye_daisy",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::Cornflower => "cornflower",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::LilyOfTheValley => "lily_of_the_valley",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::BrownMushroom => "brown_mushroom",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::RedMushroom => "red_mushroom",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::SugarCane => "sugar_cane",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::LilyPad => "lily_pad",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::Cactus => "cactus",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::Glass => "glass",
         }
     }
 
@@ -254,8 +418,108 @@ impl VoxelBlock {
             "moss_block" => Self::MossBlock,
             #[cfg(feature = "vanilla")]
             "deepslate_diamond_ore" => Self::DeepslateDiamondOre,
+            #[cfg(feature = "vanilla-visuals")]
+            "birch_log" => Self::BirchLog,
+            #[cfg(feature = "vanilla-visuals")]
+            "birch_leaves" => Self::BirchLeaves,
+            #[cfg(feature = "vanilla-visuals")]
+            "spruce_log" => Self::SpruceLog,
+            #[cfg(feature = "vanilla-visuals")]
+            "spruce_leaves" => Self::SpruceLeaves,
+            #[cfg(feature = "vanilla-visuals")]
+            "dark_oak_log" => Self::DarkOakLog,
+            #[cfg(feature = "vanilla-visuals")]
+            "dark_oak_leaves" => Self::DarkOakLeaves,
+            #[cfg(feature = "vanilla-visuals")]
+            "jungle_log" => Self::JungleLog,
+            #[cfg(feature = "vanilla-visuals")]
+            "jungle_leaves" => Self::JungleLeaves,
+            #[cfg(feature = "vanilla-visuals")]
+            "acacia_log" => Self::AcaciaLog,
+            #[cfg(feature = "vanilla-visuals")]
+            "acacia_leaves" => Self::AcaciaLeaves,
+            #[cfg(feature = "vanilla-visuals")]
+            "cherry_log" => Self::CherryLog,
+            #[cfg(feature = "vanilla-visuals")]
+            "cherry_leaves" => Self::CherryLeaves,
+            #[cfg(feature = "vanilla-visuals")]
+            "mangrove_log" => Self::MangroveLog,
+            #[cfg(feature = "vanilla-visuals")]
+            "mangrove_leaves" => Self::MangroveLeaves,
+            #[cfg(feature = "vanilla-visuals")]
+            "oak_sapling" => Self::OakSapling,
+            #[cfg(feature = "vanilla-visuals")]
+            "short_grass" => Self::ShortGrass,
+            #[cfg(feature = "vanilla-visuals")]
+            "fern" => Self::Fern,
+            #[cfg(feature = "vanilla-visuals")]
+            "dead_bush" => Self::DeadBush,
+            #[cfg(feature = "vanilla-visuals")]
+            "dandelion" => Self::Dandelion,
+            #[cfg(feature = "vanilla-visuals")]
+            "poppy" => Self::Poppy,
+            #[cfg(feature = "vanilla-visuals")]
+            "blue_orchid" => Self::BlueOrchid,
+            #[cfg(feature = "vanilla-visuals")]
+            "allium" => Self::Allium,
+            #[cfg(feature = "vanilla-visuals")]
+            "azure_bluet" => Self::AzureBluet,
+            #[cfg(feature = "vanilla-visuals")]
+            "oxeye_daisy" => Self::OxeyeDaisy,
+            #[cfg(feature = "vanilla-visuals")]
+            "cornflower" => Self::Cornflower,
+            #[cfg(feature = "vanilla-visuals")]
+            "lily_of_the_valley" => Self::LilyOfTheValley,
+            #[cfg(feature = "vanilla-visuals")]
+            "brown_mushroom" => Self::BrownMushroom,
+            #[cfg(feature = "vanilla-visuals")]
+            "red_mushroom" => Self::RedMushroom,
+            #[cfg(feature = "vanilla-visuals")]
+            "sugar_cane" => Self::SugarCane,
+            #[cfg(feature = "vanilla-visuals")]
+            "lily_pad" => Self::LilyPad,
+            #[cfg(feature = "vanilla-visuals")]
+            "cactus" => Self::Cactus,
+            #[cfg(feature = "vanilla-visuals")]
+            "glass" => Self::Glass,
             _ => Self::Air,
         }
+    }
+
+    #[cfg(feature = "vanilla-visuals")]
+    pub fn is_cutout(self) -> bool {
+        matches!(
+            self,
+            Self::OakLeaves
+                | Self::BirchLeaves
+                | Self::SpruceLeaves
+                | Self::DarkOakLeaves
+                | Self::JungleLeaves
+                | Self::AcaciaLeaves
+                | Self::CherryLeaves
+                | Self::MangroveLeaves
+                | Self::OakSapling
+                | Self::ShortGrass
+                | Self::Fern
+                | Self::DeadBush
+                | Self::Dandelion
+                | Self::Poppy
+                | Self::BlueOrchid
+                | Self::Allium
+                | Self::AzureBluet
+                | Self::OxeyeDaisy
+                | Self::Cornflower
+                | Self::LilyOfTheValley
+                | Self::BrownMushroom
+                | Self::RedMushroom
+                | Self::SugarCane
+                | Self::LilyPad
+        )
+    }
+
+    #[cfg(feature = "vanilla-visuals")]
+    pub fn is_blended(self) -> bool {
+        matches!(self, Self::Ice | Self::Glass)
     }
 
     pub fn is_solid(self) -> bool {
@@ -267,6 +531,10 @@ impl VoxelBlock {
     }
 
     pub fn is_opaque(self) -> bool {
+        #[cfg(feature = "vanilla-visuals")]
+        if self.is_cutout() || self.is_blended() {
+            return false;
+        }
         #[cfg(feature = "vanilla")]
         if matches!(self, Self::Lava | Self::Ice) {
             return false;
@@ -275,6 +543,10 @@ impl VoxelBlock {
     }
 
     pub fn should_cull_against(self, neighbor: Self) -> bool {
+        #[cfg(feature = "vanilla-visuals")]
+        if self.is_blended() && self == neighbor {
+            return true;
+        }
         #[cfg(feature = "vanilla")]
         if matches!(self, Self::Lava | Self::Ice) {
             return self == neighbor || neighbor.is_opaque();

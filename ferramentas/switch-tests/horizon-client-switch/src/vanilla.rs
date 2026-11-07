@@ -27,6 +27,12 @@ use crate::{
 pub struct Vanilla {
     pub generator: OverworldGenerator,
     pub spawn: [i32; 2],
+    #[cfg(feature = "vanilla-visuals")]
+    pub decorated: bool,
+    #[cfg(feature = "vanilla-visuals")]
+    pub biome_visuals: Box<[crate::visuals::BiomeVisual]>,
+    #[cfg(feature = "vanilla-visuals")]
+    pub visual_states: Box<[crate::visuals::VisualState]>,
     visuals: Box<[VoxelBlock]>,
     #[cfg(feature = "vanilla-water")]
     pub fluids: horizon_world::fluid::FluidStateTable,
@@ -38,6 +44,15 @@ pub struct Vanilla {
 
 impl Vanilla {
     pub fn load(root: &Path, log: impl Fn(&str)) -> io::Result<Arc<Self>> {
+        Self::load_mode(root, log, false)
+    }
+
+    #[cfg(feature = "vanilla-visuals")]
+    pub fn load_decorated(root: &Path, log: impl Fn(&str)) -> io::Result<Arc<Self>> {
+        Self::load_mode(root, log, true)
+    }
+
+    fn load_mode(root: &Path, log: impl Fn(&str), decorated: bool) -> io::Result<Arc<Self>> {
         let start = Instant::now();
         let bytes = fs::read(root.join("facts.json"))?;
         let read = start.elapsed();
@@ -52,14 +67,19 @@ impl Vanilla {
             registry.len()
         ));
         let start = Instant::now();
-        let data =
-            GeneratorData::load_profiled(&root.join("worldgen"), registry, &|stage, elapsed| {
-                log(&format!(
-                    "INIT_TABLE stage={stage} elapsed_ms={}",
-                    elapsed.as_millis()
-                ));
-            })
-            .map_err(io::Error::other)?;
+        let profile = |stage: &str, elapsed: std::time::Duration| {
+            log(&format!(
+                "INIT_TABLE stage={stage} elapsed_ms={}",
+                elapsed.as_millis()
+            ));
+        };
+        let path = root.join("worldgen");
+        let data = if decorated {
+            GeneratorData::load_profiled_without_structures(&path, registry, &profile)
+        } else {
+            GeneratorData::load_profiled(&path, registry, &profile)
+        }
+        .map_err(io::Error::other)?;
         log(&format!(
             "INIT worldgen_tables_ms={}",
             start.elapsed().as_millis()
@@ -68,7 +88,12 @@ impl Vanilla {
             log(&format!("WARN worldgen {warning}"));
         }
         let start = Instant::now();
-        let generator = OverworldGenerator::new(data.clone(), SEED).map_err(io::Error::other)?;
+        let generator = if decorated {
+            OverworldGenerator::without_structures(data.clone(), SEED)
+        } else {
+            OverworldGenerator::new(data.clone(), SEED)
+        }
+        .map_err(io::Error::other)?;
         if generator.level() != (MIN_Y, HEIGHT) {
             return Err(invalid("unexpected 26.3 overworld height"));
         }
@@ -83,6 +108,14 @@ impl Vanilla {
                 let name = &registry.state(id).expect("registered state").name;
                 let visual = VoxelBlock::from_nbt_name(name);
                 if visual == VoxelBlock::Air {
+                    #[cfg(feature = "vanilla-visuals")]
+                    if decorated
+                        && data
+                            .cached_collision_shape(id)
+                            .is_some_and(|shape| !shape.is_block())
+                    {
+                        return VoxelBlock::Air;
+                    }
                     VoxelBlock::Stone
                 } else {
                     visual
@@ -104,9 +137,24 @@ impl Vanilla {
             start.elapsed().as_millis(),
             generator.sea_level()
         ));
+        #[cfg(feature = "vanilla-visuals")]
+        let (biome_visuals, visual_states) = if decorated {
+            (
+                crate::visuals::load_biomes(root, &data)?,
+                crate::visuals::load_states(root, registry.len())?,
+            )
+        } else {
+            (Box::default(), Box::default())
+        };
         Ok(Arc::new(Self {
             generator,
             spawn,
+            #[cfg(feature = "vanilla-visuals")]
+            decorated,
+            #[cfg(feature = "vanilla-visuals")]
+            biome_visuals,
+            #[cfg(feature = "vanilla-visuals")]
+            visual_states,
             visuals,
             #[cfg(feature = "vanilla-water")]
             fluids,
@@ -148,13 +196,46 @@ fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
-pub fn generate(worker: &mut GeneratorWorker, pos: ChunkPos) -> io::Result<Column> {
-    let proto = worker.generate_proto(pos).map_err(io::Error::other)?;
-    Ok(Column::from_proto(proto))
+pub struct Generation {
+    worker: GeneratorWorker,
+    #[cfg(feature = "vanilla-visuals")]
+    features: Option<crate::features::FeatureCache>,
+}
+
+impl Generation {
+    #[cfg(feature = "vanilla-visuals")]
+    pub fn take_feature_stats(&mut self) -> crate::features::FeatureStats {
+        self.features
+            .as_mut()
+            .map_or_else(Default::default, crate::features::FeatureCache::take_stats)
+    }
+
+    pub fn new(vanilla: &Vanilla) -> Self {
+        Self {
+            worker: vanilla.generator.worker(),
+            #[cfg(feature = "vanilla-visuals")]
+            features: vanilla
+                .decorated
+                .then(crate::features::FeatureCache::default),
+        }
+    }
+
+    pub fn generate(&mut self, pos: ChunkPos) -> io::Result<Column> {
+        #[cfg(feature = "vanilla-visuals")]
+        if let Some(cache) = &mut self.features {
+            return cache
+                .column(&mut self.worker, pos)
+                .map_err(io::Error::other);
+        }
+        self.worker
+            .generate_proto(pos)
+            .map(Column::from_proto)
+            .map_err(io::Error::other)
+    }
 }
 
 impl Column {
-    fn from_proto(proto: ProtoChunk) -> Self {
+    pub(super) fn from_proto(proto: ProtoChunk) -> Self {
         let biomes = Arc::new(proto.biomes().clone());
         let data = proto.data().clone();
         Self::new(proto.terrain, biomes, data)

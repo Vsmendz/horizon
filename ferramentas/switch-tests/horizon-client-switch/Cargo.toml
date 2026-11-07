@@ -17,6 +17,7 @@ vanilla = []
 render-diagnostics = ["vanilla"]
 vanilla-water = ["vanilla"]
 first-person-polish = ["vanilla-water"]
+vanilla-visuals = ["first-person-polish"]
 
 [patch.crates-io]
 libc = { path = "../vendor/libc" }

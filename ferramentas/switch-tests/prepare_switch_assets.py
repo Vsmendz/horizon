@@ -63,6 +63,8 @@ VANILLA_BLOCKS = [
 ]
 
 
+VISUAL_BLOCKS = ['birch_log', 'birch_leaves', 'spruce_log', 'spruce_leaves', 'dark_oak_log', 'dark_oak_leaves', 'jungle_log', 'jungle_leaves', 'acacia_log', 'acacia_leaves', 'cherry_log', 'cherry_leaves', 'mangrove_log', 'mangrove_leaves', 'oak_sapling', 'short_grass', 'fern', 'dead_bush', 'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet', 'oxeye_daisy', 'cornflower', 'lily_of_the_valley', 'brown_mushroom', 'red_mushroom', 'sugar_cane', 'lily_pad', 'cactus', 'glass']
+
 def sha1_file(path: Path) -> str:
     h = hashlib.sha1()
     with path.open("rb") as f:
@@ -109,12 +111,15 @@ def main() -> int:
     if manifest_sha1 not in accepted_manifests:
         raise SystemExit(f"26.3.json SHA-1 mismatch: got {manifest_sha1}")
 
-    water = sys.argv[1:] == ["--vanilla-water"]
+    visuals = sys.argv[1:] == ["--vanilla-visuals"]
+    water = visuals or sys.argv[1:] == ["--vanilla-water"]
     vanilla = water or sys.argv[1:] == ["--vanilla"]
     if sys.argv[1:] and not vanilla:
-        raise SystemExit("Usage: prepare_switch_assets.py [--vanilla|--vanilla-water]")
+        raise SystemExit("Usage: prepare_switch_assets.py [--vanilla|--vanilla-water|--vanilla-visuals]")
     blocks = BLOCKS + VANILLA_BLOCKS if vanilla else BLOCKS
-    out_root = (script_dir / "out" / ("test8f-romfs" if water else "test8-romfs") if vanilla
+    if visuals:
+        blocks += VISUAL_BLOCKS
+    out_root = (script_dir / "out" / ("test10-romfs" if visuals else "test8f-romfs" if water else "test8-romfs") if vanilla
                 else script_dir / "out" / "sdcard" / "switch" / "horizon")
     assets_root = out_root / "assets"
     if assets_root.exists() and not vanilla:
@@ -129,6 +134,11 @@ def main() -> int:
     if water:
         textures_set.update(["block/water_flow", "block/water_overlay"])
 
+    if visuals:
+        models_queue.append("item/water_bucket")
+        textures_set.update(f"block/destroy_stage_{i}" for i in range(10))
+        textures_set.update(["particle/bubble", *[f"particle/splash_{i}" for i in range(4)]])
+
     with zipfile.ZipFile(jar_path, "r") as zf:
         jar_names = set(zf.namelist())
 
@@ -141,6 +151,10 @@ def main() -> int:
             dst.write_bytes(data)
             extracted_files.append(entry_path)
             return data
+
+        if visuals:
+            for name in ("grass", "foliage"):
+                extract_entry(f"assets/minecraft/textures/colormap/{name}.png")
 
         # 1. Extract blockstates and collect referenced models
         for block in blocks:
@@ -181,6 +195,8 @@ def main() -> int:
                     models_queue.append(parent_id)
 
             for tex_val in model_json.get("textures", {}).values():
+                if isinstance(tex_val, dict):
+                    tex_val = tex_val.get("sprite")
                 if isinstance(tex_val, str) and not tex_val.startswith("#"):
                     textures_set.add(strip_ns(tex_val))
 

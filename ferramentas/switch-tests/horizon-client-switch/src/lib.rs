@@ -18,15 +18,24 @@
 #![allow(clippy::too_many_arguments)]
 
 mod block_palette;
+#[cfg(feature = "vanilla-visuals")]
+#[path = "../../../../crates/horizon-client-render/src/block_particle_geometry.rs"]
+mod block_particle_geometry;
 #[cfg(all(test, feature = "vanilla"))]
 mod block_table_probe;
 #[path = "../../../../crates/horizon-client-render/src/camera.rs"]
 pub mod camera;
+#[cfg(feature = "vanilla-visuals")]
+mod effects;
+#[cfg(feature = "vanilla-visuals")]
+mod features;
 #[cfg(feature = "vanilla-water")]
 #[path = "../../../../crates/horizon-client-render/src/mesher/fluid_geometry.rs"]
 mod fluid_geometry;
 #[cfg(feature = "vanilla")]
 mod mesh_upload;
+#[cfg(feature = "vanilla-visuals")]
+mod visuals;
 #[cfg(feature = "vanilla-water")]
 mod water;
 
@@ -753,6 +762,16 @@ fn fs_water(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 "#;
 
+#[cfg(feature = "vanilla-visuals")]
+const VISUALS_WGSL: &str = r#"
+@fragment
+fn fs_effect(in: VertexOutput) -> @location(0) vec4<f32> {
+    let tex = textureSample(terrain_tex, terrain_sampler, in.uv_layer.xy, i32(round(in.uv_layer.z)));
+    let rgb = scene_fog(tex.rgb * in.color_ao.rgb, distance(in.world_pos, camera.camera_pos.xyz));
+    return vec4<f32>(rgb, tex.a * in.color_ao.a);
+}
+"#;
+
 #[cfg(feature = "render-diagnostics")]
 const DIAGNOSTIC_WGSL: &str = r#"
 @fragment
@@ -902,6 +921,14 @@ pub struct BakedAssetRegistry {
     baked_quads: BTreeMap<VoxelBlock, Vec<ModelQuad>>,
     #[cfg(feature = "first-person-polish")]
     hand_models: BTreeMap<VoxelBlock, Mat4>,
+    #[cfg(feature = "vanilla-visuals")]
+    bucket_layer: u32,
+    #[cfg(feature = "vanilla-visuals")]
+    bubble: u32,
+    #[cfg(feature = "vanilla-visuals")]
+    splash: [u32; 4],
+    #[cfg(feature = "vanilla-visuals")]
+    cracks: [u32; 10],
     animations: Vec<AnimatedLayer>,
     white_layer: u32,
 }
@@ -1055,7 +1082,7 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
         let png_bytes =
             fs::read(&png_path).map_err(|e| format!("read {}: {e}", png_path.display()))?;
         let (side, mut frames) = decode_png_frames(&png_bytes)?;
-        if side != 16 && side != ATLAS_SIDE {
+        if side == 0 || !ATLAS_SIDE.is_multiple_of(side) {
             return Err(format!(
                 "Unsupported texture dimensions for {tex_rel}: {side}x{side}"
             ));
@@ -1122,6 +1149,8 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
     let blocks = VoxelBlock::ALL_NON_AIR.into_iter();
     #[cfg(feature = "vanilla")]
     let blocks = blocks.chain(VoxelBlock::TERRAIN_MODELS);
+    #[cfg(feature = "vanilla-visuals")]
+    let blocks = blocks.chain(VoxelBlock::VISUAL_MODELS);
     for block in blocks {
         let name = block.block_name();
         let bs_path = root.join(format!("assets/minecraft/blockstates/{name}.json"));
@@ -1133,6 +1162,8 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
         let preferred_key = match block {
             VoxelBlock::GrassBlock => "snowy=false",
             VoxelBlock::OakLog => "axis=y",
+            #[cfg(feature = "vanilla-visuals")]
+            _ if name.ends_with("_log") => "axis=y",
             _ => "",
         };
         let variant = select_variant(&def, preferred_key)?;
@@ -1197,6 +1228,40 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
     });
     #[cfg(feature = "vanilla-water")]
     let [still, flow, overlay] = water_layers;
+    #[cfg(feature = "vanilla-visuals")]
+    let (bucket_layer, bubble, splash, cracks) = {
+        let (bucket, hand, bucket_layer) =
+            visuals::bake_bucket(&model_lib, &sprite_to_layer, &texture_layers)?;
+        baked_quads.insert(VoxelBlock::Water, bucket);
+        hand_models.insert(VoxelBlock::Water, hand);
+        let layer = |name: &str| {
+            sprite_to_layer
+                .get(name)
+                .copied()
+                .ok_or_else(|| format!("missing visual sprite {name}"))
+        };
+        let bubble = layer("minecraft:particle/bubble")?;
+        let mut splash = [0; 4];
+        for (i, dest) in splash.iter_mut().enumerate() {
+            *dest = layer(&format!("minecraft:particle/splash_{i}"))?;
+        }
+        let mut cracks = [0; 10];
+        for (i, dest) in cracks.iter_mut().enumerate() {
+            *dest = layer(&format!("minecraft:block/destroy_stage_{i}"))?;
+        }
+        (bucket_layer, bubble, splash, cracks)
+    };
+    #[cfg(feature = "vanilla-visuals")]
+    for (block, quads) in &baked_quads {
+        for quad in quads {
+            if !sprite_to_layer.contains_key(&quad.material.sprite) {
+                return Err(format!(
+                    "{block:?}: missing atlas sprite {}",
+                    quad.material.sprite
+                ));
+            }
+        }
+    }
     Ok(BakedAssetRegistry {
         source_label: format!(
             "{} (26.3 jar sha1={}..)",
@@ -1210,6 +1275,14 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
         baked_quads,
         #[cfg(feature = "first-person-polish")]
         hand_models,
+        #[cfg(feature = "vanilla-visuals")]
+        bucket_layer,
+        #[cfg(feature = "vanilla-visuals")]
+        bubble,
+        #[cfg(feature = "vanilla-visuals")]
+        splash,
+        #[cfg(feature = "vanilla-visuals")]
+        cracks,
         animations,
         white_layer,
     })
@@ -1218,7 +1291,9 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
 #[cfg(all(test, feature = "vanilla"))]
 #[test]
 fn vanilla_romfs_bakes_models_and_meshes_the_spawn() -> Result<(), Box<dyn std::error::Error>> {
-    let stage = if cfg!(feature = "vanilla-water") {
+    let stage = if cfg!(feature = "vanilla-visuals") {
+        "../out/test10-romfs"
+    } else if cfg!(feature = "vanilla-water") {
         "../out/test8f-romfs"
     } else {
         "../out/test8-romfs"
@@ -1247,13 +1322,15 @@ fn vanilla_romfs_bakes_models_and_meshes_the_spawn() -> Result<(), Box<dyn std::
         );
     }
     assert!(assets.baked_quads.contains_key(&VoxelBlock::Deepslate));
-    assert!(
-        assets
-            .baked_quads
-            .values()
-            .flatten()
-            .all(|quad| assets.sprite_to_layer.contains_key(&quad.material.sprite))
-    );
+    for (block, quads) in &assets.baked_quads {
+        for quad in quads {
+            assert!(
+                assets.sprite_to_layer.contains_key(&quad.material.sprite),
+                "{block:?}: missing {}",
+                quad.material.sprite
+            );
+        }
+    }
     let data = vanilla::Vanilla::load(&root, |line| println!("{line}"))?;
     let [x, z] = data.spawn;
     let center = (x >> 4, z >> 4);
@@ -1507,7 +1584,20 @@ impl HorizonClientWorld {
                                 }
                             }
                         };
+                        #[cfg(not(feature = "vanilla-visuals"))]
                         let tint = block.biome_tint(quad.tint_index);
+                        #[cfg(feature = "vanilla-visuals")]
+                        let tint = visuals::tint(self, pos, block, quad.tint_index);
+                        #[cfg(feature = "vanilla-visuals")]
+                        let face_shade = visuals::light(self, id, face_shade);
+                        #[cfg(feature = "vanilla-visuals")]
+                        let vertices = if block.is_blended() {
+                            &mut translucent
+                        } else {
+                            &mut mesh.vertices
+                        };
+                        #[cfg(not(feature = "vanilla-visuals"))]
+                        let vertices = &mut mesh.vertices;
                         let color_ao = [tint[0], tint[1], tint[2], face_shade];
                         let layer = assets
                             .sprite_to_layer
@@ -1518,7 +1608,7 @@ impl HorizonClientWorld {
                         for &vi in &[0usize, 1, 2, 0, 2, 3] {
                             let p = quad.positions[vi];
                             let uv = quad.uv[vi];
-                            mesh.vertices.push(TerrainVertex {
+                            vertices.push(TerrainVertex {
                                 pos: [origin[0] + p[0], origin[1] + p[1], origin[2] + p[2]],
                                 normal,
                                 uv_layer: [uv[0], uv[1], layer],
@@ -1610,7 +1700,24 @@ fn update_stream(world: &mut HorizonClientWorld, center: Key) -> std::io::Result
     Ok(())
 }
 
+#[cfg(feature = "vanilla-visuals")]
+fn log_features(change: &StreamChange, report: impl Fn(&str)) {
+    if change.features.tiles != 0 {
+        let stats = &change.features;
+        report(&format!(
+            "FEATURES tiles={} new_terrain={} placed={} unsupported={} failed={} peak_terrain_bytes={}",
+            stats.tiles,
+            stats.new_terrain,
+            stats.placed,
+            stats.unsupported,
+            stats.failed,
+            stats.peak_terrain_bytes
+        ));
+    }
+}
 fn log_stream_metrics(change: &StreamChange) {
+    #[cfg(feature = "vanilla-visuals")]
+    log_features(change, log_line);
     #[cfg(feature = "vanilla")]
     log_line(&format!(
         "CHUNK_TIMING generated_us={:?} read_us={} save_us={}",
@@ -1657,9 +1764,18 @@ fn open_vanilla_world()
         .spawn(move || {
             let start = Instant::now();
             let report = |s: &str| { let _ = messages.send(s.to_owned()); };
-            let vanilla = vanilla::Vanilla::load(Path::new("romfs:/"), report)?;
+            #[cfg(feature = "vanilla-visuals")]
+            let (vanilla, save_dir) = (
+                vanilla::Vanilla::load_decorated(Path::new("romfs:/"), report)?,
+                "sdmc:/switch/horizon/saves/switch_vanilla_test10",
+            );
+            #[cfg(not(feature = "vanilla-visuals"))]
+            let (vanilla, save_dir) = (
+                vanilla::Vanilla::load(Path::new("romfs:/"), report)?,
+                "sdmc:/switch/horizon/saves/switch_vanilla_test8",
+            );
             let mut world = HorizonClientWorld::new(
-                PathBuf::from("sdmc:/switch/horizon/saves/switch_vanilla_test8"), vanilla);
+                PathBuf::from(save_dir), vanilla);
             let saved = world.read_player()?;
             let [x, z] = world.spawn_xz();
             #[cfg(feature = "first-person-polish")]
@@ -1668,6 +1784,8 @@ fn open_vanilla_world()
             let center = saved.map_or((x >> 4, z >> 4), |state| player_chunk(state.0));
             report("INFO Preparing initial 3x3 view");
             if let Some(change) = world.stream_to(center)? {
+                #[cfg(feature = "vanilla-visuals")]
+                log_features(&change, report);
                 report(&format!(
                     "STREAM_START center={center:?} resident={} generated={} read={} worker_ms={} generated_us={:?} read_us={}",
                     world.chunks.len(), change.generated, change.read, start.elapsed().as_millis(),
@@ -2659,6 +2777,21 @@ pub fn append_hud_overlay(
             [0.22, 0.24, 0.28],
         );
 
+        #[cfg(feature = "vanilla-visuals")]
+        if block == VoxelBlock::Water {
+            emit_ndc_rect(
+                out,
+                inv_vp,
+                sx0 + 0.010,
+                sy0 + 0.016,
+                sx1 - 0.010,
+                sy1 - 0.016,
+                0.015,
+                assets.bucket_layer as f32,
+                [1.0; 3],
+            );
+            continue;
+        }
         if let Some(quads) = assets.baked_quads.get(&block) {
             let icon_quad = quads
                 .iter()
@@ -2992,6 +3125,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         POLISH_WGSL,
         #[cfg(feature = "vanilla-water")]
         WATER_WGSL,
+        #[cfg(feature = "vanilla-visuals")]
+        VISUALS_WGSL,
         #[cfg(feature = "render-diagnostics")]
         DIAGNOSTIC_WGSL,
     ]
@@ -3118,7 +3253,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
     })];
     let pipeline_constants = naga::back::PipelineConstants::default();
 
-    let make_pipeline = |label, vertex_entry, fragment_entry, blend| unsafe {
+    let make_pipeline = |label, vertex_entry, fragment_entry, blend, write_depth| unsafe {
         device
             .create_render_pipeline(&RenderPipelineDescriptor {
                 label: Some(label),
@@ -3143,7 +3278,7 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 },
                 depth_stencil: Some(wgpu_types::DepthStencilState {
                     format: wgpu_types::TextureFormat::Depth24Plus,
-                    depth_write_enabled: Some(true),
+                    depth_write_enabled: Some(write_depth),
                     depth_compare: Some(wgpu_types::CompareFunction::LessEqual),
                     stencil: wgpu_types::StencilState::default(),
                     bias: wgpu_types::DepthBiasState::default(),
@@ -3165,26 +3300,48 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             })
             .expect("create_render_pipeline")
     };
-    let render_pipeline = make_pipeline("horizon_client_pipeline", "vs_main", "fs_main", None);
+    let render_pipeline =
+        make_pipeline("horizon_client_pipeline", "vs_main", "fs_main", None, true);
     let hand_entry = if cfg!(feature = "first-person-polish") {
         "fs_hand_polished"
     } else {
         "fs_hand"
     };
-    let hand_pipeline = make_pipeline("horizon_hand_pipeline", "vs_hand", hand_entry, None);
+    let hand_pipeline = make_pipeline("horizon_hand_pipeline", "vs_hand", hand_entry, None, true);
     #[cfg(feature = "vanilla-water")]
     let water_pipeline = make_pipeline(
         "horizon water",
         "vs_main",
         "fs_water",
         Some(wgpu_types::BlendState::ALPHA_BLENDING),
+        true,
+    );
+    #[cfg(feature = "vanilla-visuals")]
+    let effect_pipeline = make_pipeline(
+        "horizon effects",
+        "vs_main",
+        "fs_effect",
+        Some(wgpu_types::BlendState::ALPHA_BLENDING),
+        false,
     );
     #[cfg(feature = "render-diagnostics")]
     let probe_pipelines = [
-        make_pipeline("probe solid", "vs_main", "fs_probe_solid", None),
-        make_pipeline("probe sampler", "vs_main", "fs_probe_sample", None),
-        make_pipeline("probe direct texel", "vs_main", "fs_probe_texel", None),
-        make_pipeline("probe fixed texel", "vs_main", "fs_probe_fixed_texel", None),
+        make_pipeline("probe solid", "vs_main", "fs_probe_solid", None, true),
+        make_pipeline("probe sampler", "vs_main", "fs_probe_sample", None, true),
+        make_pipeline(
+            "probe direct texel",
+            "vs_main",
+            "fs_probe_texel",
+            None,
+            true,
+        ),
+        make_pipeline(
+            "probe fixed texel",
+            "vs_main",
+            "fs_probe_fixed_texel",
+            None,
+            true,
+        ),
     ];
 
     let layer_count = assets.texture_layers.len() as u32;
@@ -3493,6 +3650,12 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
     let mut respawn_requested = false;
     let mut last_frame = Instant::now();
     let mut physics_accum = 0.0f32;
+    #[cfg(feature = "vanilla-visuals")]
+    let (mut effects, mut mining) = (effects::Effects::default(), effects::Mining::default());
+    #[cfg(feature = "vanilla-visuals")]
+    let mut biome_sky = [0.47, 0.65, 1.0];
+    #[cfg(feature = "vanilla-visuals")]
+    let mut was_in_water = false;
     #[cfg(feature = "first-person-polish")]
     let mut water_view = polish::WaterView::default();
     let mut frame_vertices: Vec<TerrainVertex> = Vec::with_capacity(65536);
@@ -3716,6 +3879,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 }
             }
 
+            #[cfg(feature = "vanilla-visuals")]
+            let mut steps = 0;
             // Step 20 Hz player physics
             physics_accum = (physics_accum + dt).min(0.20);
             while physics_accum >= 0.05 {
@@ -3728,6 +3893,28 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                     break;
                 }
                 player.tick_physics(&guard, pad.move_y, -pad.move_x, pad.down(PadButton::South));
+                #[cfg(feature = "vanilla-visuals")]
+                {
+                    steps += 1;
+                    effects.tick();
+                    let depth = polish::water_depth(&guard, player.aabb());
+                    if (depth > 0.0) != was_in_water {
+                        let [x, y, z] = [player.position.x, player.position.y, player.position.z];
+                        effects.water(
+                            &assets,
+                            GlamVec3::new(x as f32, (y + depth) as f32, z as f32),
+                            false,
+                        );
+                        if depth > 0.0 {
+                            effects.water(
+                                &assets,
+                                GlamVec3::new(x as f32, y as f32, z as f32),
+                                true,
+                            );
+                        }
+                        was_in_water = depth > 0.0;
+                    }
+                }
                 // A slow read must not let the player walk into unloaded air.
                 // The fall recovery can teleport to spawn and waits there for its view.
                 if !guard.chunks.contains_key(&player_chunk(player.position))
@@ -3771,24 +3958,62 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             // Voxel raycast from player eyes
             targeted_hit = player.raycast_block(&mut guard);
 
-            // Break block (ZR or D-Pad Left)
-            if edges.pressed(PadButton::RightTrigger) || edges.pressed(PadButton::DPadLeft) {
+            let attack_edge =
+                edges.pressed(PadButton::RightTrigger) || edges.pressed(PadButton::DPadLeft);
+            #[cfg(not(feature = "vanilla-visuals"))]
+            let break_now = attack_edge;
+            #[cfg(feature = "vanilla-visuals")]
+            let break_now = {
+                let eye = player.camera.position.map(|v| v.floor() as i32);
+                if let Some(biome) =
+                    visuals::biome_at(&guard, BlockPos::new(eye[0], eye[1], eye[2]))
+                {
+                    biome_sky = std::array::from_fn(|i| {
+                        camera::lerp((dt * 3.0).min(1.0), biome_sky[i], biome.sky[i])
+                    });
+                }
+                let hit = targeted_hit.filter(|_| pad.down(PadButton::RightTrigger));
+                let target = hit.and_then(|hit| {
+                    let id = guard.state_at(hit.block)?;
+                    Some((
+                        (hit.block, id, player.selected_block()),
+                        guard.vanilla.visual_states.get(id.0 as usize)?,
+                    ))
+                });
+                if (attack_edge || steps > 0 && hit.is_some())
+                    && let Some(hit) = targeted_hit
+                {
+                    effects.block(&guard, &assets, hit.block, hit.direction, false);
+                }
+                let slow = if player.on_ground { 1.0 } else { 5.0 }
+                    * if water_view.blend > 0.5 { 5.0 } else { 1.0 };
+                mining.update(target, steps, slow, hit.map(|h| guard.get_block(h.block)))
+                    || edges.pressed(PadButton::DPadLeft)
+            };
+            if attack_edge {
                 #[cfg(feature = "first-person-polish")]
                 player.hand.attack();
+            }
+            if break_now {
                 #[cfg(not(feature = "first-person-polish"))]
                 {
                     player.hand_swing = 1.0;
                 }
                 if let Some(hit) = targeted_hit {
-                    if hit.block.y > MIN_Y
-                        && guard.get_block(hit.block) != VoxelBlock::Bedrock
-                        && guard.set_block(hit.block, VoxelBlock::Air)
-                    {
-                        player.blocks_broken += 1;
-                        log_line(&format!(
-                            "EVENT Broke block at ({}, {}, {})",
-                            hit.block.x, hit.block.y, hit.block.z
-                        ));
+                    if hit.block.y > MIN_Y && guard.get_block(hit.block) != VoxelBlock::Bedrock {
+                        #[cfg(feature = "vanilla-visuals")]
+                        effects.block(&guard, &assets, hit.block, hit.direction, true);
+                        if guard.set_block(hit.block, VoxelBlock::Air) {
+                            #[cfg(feature = "vanilla-visuals")]
+                            {
+                                mining = effects::Mining::default();
+                            }
+                            player.blocks_broken += 1;
+                            log_line(&format!(
+                                "EVENT Broke block at ({}, {}, {})",
+                                hit.block.x, hit.block.y, hit.block.z
+                            ));
+                        }
                     }
                 }
             }
@@ -3837,8 +4062,13 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         let day_angle = (tick as f32) * 0.012;
         let sun_y = (day_angle.cos() * 0.42 + 0.68).clamp(0.25, 1.0);
         let sun_dir = GlamVec3::new(0.45, sun_y, 0.55).normalize();
+        #[cfg(feature = "vanilla-visuals")]
+        let [sky_r, sky_g, sky_b] = biome_sky.map(|v| v * sun_y);
+        #[cfg(not(feature = "vanilla-visuals"))]
         let sky_r = 0.36 * sun_y + 0.08;
+        #[cfg(not(feature = "vanilla-visuals"))]
         let sky_g = 0.58 * sun_y + 0.12;
+        #[cfg(not(feature = "vanilla-visuals"))]
         let sky_b = 0.88 * sun_y + 0.18;
 
         // Build View-Projection Matrix using real `camera::view_matrix` + `AvatarBob`
@@ -3937,6 +4167,20 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
             append_target_highlight(&mut frame_vertices, hit.block, assets.white_layer);
         }
         let world_end = frame_vertices.len() as u32;
+        #[cfg(feature = "vanilla-visuals")]
+        if !controlled {
+            mining.vertices(&assets, &mut frame_vertices);
+            let camera_basis = view_rot.transpose();
+            effects.vertices(
+                &assets,
+                &mut frame_vertices,
+                GlamVec3::new(cam_x, cam_y, cam_z),
+                camera_basis.transform_vector3(GlamVec3::X),
+                camera_basis.transform_vector3(GlamVec3::Y),
+                partial_tick,
+            );
+        }
+        let effects_end = frame_vertices.len() as u32;
         if !controlled && !player.camera.detached {
             append_first_person_hand(
                 &mut frame_vertices,
@@ -4201,6 +4445,12 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 encoder.set_bind_group(&pipeline_layout, 0, &bind_group, &[]);
                 gpu_sections.draw_water(&mut encoder, vp, [cam_x, cam_y, cam_z]);
             }
+            #[cfg(feature = "vanilla-visuals")]
+            if effects_end > world_end {
+                encoder.set_render_pipeline(&effect_pipeline);
+                encoder.set_vertex_buffer(0, BufferBinding::new_unchecked(&vertex_buffer, 0, None));
+                encoder.draw(world_end, effects_end - world_end, 0, 1);
+            }
             #[cfg(feature = "render-diagnostics")]
             if frames_rendered == 1 {
                 encoder.set_render_pipeline(&probe_pipelines[1]);
@@ -4284,10 +4534,10 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 .begin_render_pass(&pass)
                 .expect("begin_render_pass(hand/HUD)");
             encoder.set_vertex_buffer(0, BufferBinding::new_unchecked(&vertex_buffer, 0, None));
-            if hand_end > world_end {
+            if hand_end > effects_end {
                 encoder.set_render_pipeline(&hand_pipeline);
                 encoder.set_bind_group(&pipeline_layout, 0, &bind_group, &[]);
-                encoder.draw(world_end, hand_end - world_end, 0, 1);
+                encoder.draw(effects_end, hand_end - effects_end, 0, 1);
             }
             if !controlled && vertex_count > hand_end {
                 encoder.set_render_pipeline(&render_pipeline);
@@ -4405,6 +4655,11 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
     }
     log_line(&format!(
         "FRAME_TIMING max_interval_us={max_frame_us} intervals_over_33ms={slow_frames} max_column_mesh_us={max_mesh_us} interval_samples={interval_samples} interval_total_us={interval_total_us} frame_gaps_over_1s={frame_gaps_over_1s}"
+    ));
+    #[cfg(feature = "vanilla-visuals")]
+    log_line(&format!(
+        "EFFECTS emitted={} peak={}",
+        effects.emitted, effects.peak
     ));
     log_line(&format!(
         "UPLOAD max_staging_write_us={max_upload_us} max_staging_bytes={max_upload_bytes} peak_cpu_mesh_bytes={peak_mesh_bytes}"

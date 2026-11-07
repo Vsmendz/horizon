@@ -377,7 +377,7 @@ impl GeneratorData {
         registry: &'static BlockRegistry,
         ov: &WorldgenOverrides,
     ) -> Result<Arc<Self>, GeneratorError> {
-        Self::load_inner(dir, registry, ov, None)
+        Self::load_inner(dir, registry, ov, None, true)
     }
 
     /// Load the same vanilla tables and report elapsed time for the major readers.
@@ -386,7 +386,28 @@ impl GeneratorData {
         registry: &'static BlockRegistry,
         profile: &dyn Fn(&str, std::time::Duration),
     ) -> Result<Arc<Self>, GeneratorError> {
-        Self::load_inner(dir, registry, &WorldgenOverrides::default(), Some(profile))
+        Self::load_inner(
+            dir,
+            registry,
+            &WorldgenOverrides::default(),
+            Some(profile),
+            true,
+        )
+    }
+
+    /// Profile a generator configured with `OverworldGenerator::without_structures`.
+    pub fn load_profiled_without_structures(
+        dir: &Path,
+        registry: &'static BlockRegistry,
+        profile: &dyn Fn(&str, std::time::Duration),
+    ) -> Result<Arc<Self>, GeneratorError> {
+        Self::load_inner(
+            dir,
+            registry,
+            &WorldgenOverrides::default(),
+            Some(profile),
+            false,
+        )
     }
 
     fn load_inner(
@@ -394,6 +415,7 @@ impl GeneratorData {
         registry: &'static BlockRegistry,
         ov: &WorldgenOverrides,
         profile: LoadProfile<'_>,
+        load_structures: bool,
     ) -> Result<Arc<Self>, GeneratorError> {
         let main_start = profile.map(|_| std::time::Instant::now());
         let mut warnings = Vec::new();
@@ -434,25 +456,34 @@ impl GeneratorData {
             },
             profile.is_some(),
         )?;
-        let structures = loading(
-            {
-                let (dir, tags, ov) = (dir.to_owned(), block_tags.clone(), ov.clone());
-                move || -> Result<_, GeneratorError> {
-                    let Ok(json) = fs::read_to_string(dir.join("blocks/structure-blocks.json"))
-                    else {
-                        return Ok(None);
-                    };
-                    Ok(Some(Arc::new(super::structure::StructureResources::new(
-                        registry,
-                        super::structure::StateTransforms::from_json(&json, registry.len())?,
-                        &dir.join("structure"),
-                        read_optional_bundle(&dir, &ov, "processor_lists")?.unwrap_or_default(),
-                        &tags,
-                    ))))
-                }
-            },
-            profile.is_some(),
-        )?;
+        let structures = load_structures
+            .then(|| {
+                loading(
+                    {
+                        let (dir, tags, ov) = (dir.to_owned(), block_tags.clone(), ov.clone());
+                        move || -> Result<_, GeneratorError> {
+                            let Ok(json) =
+                                fs::read_to_string(dir.join("blocks/structure-blocks.json"))
+                            else {
+                                return Ok(None);
+                            };
+                            Ok(Some(Arc::new(super::structure::StructureResources::new(
+                                registry,
+                                super::structure::StateTransforms::from_json(
+                                    &json,
+                                    registry.len(),
+                                )?,
+                                &dir.join("structure"),
+                                read_optional_bundle(&dir, &ov, "processor_lists")?
+                                    .unwrap_or_default(),
+                                &tags,
+                            ))))
+                        }
+                    },
+                    profile.is_some(),
+                )
+            })
+            .transpose()?;
         let behaviours = loading(
             {
                 let root = dir.parent().map(Path::to_owned);
@@ -574,18 +605,23 @@ impl GeneratorData {
             }),
             _ => None,
         };
-        let structures = joined(structures, profile, "structure_resources")?;
-        let structure_resources = match (
-            read_optional_bundle(dir, ov, "structures")?,
-            read_optional_bundle(dir, ov, "structure_sets")?,
-            read_optional_bundle(dir, ov, "template_pools")?,
-        ) {
-            (Some(structures), Some(sets), Some(pools)) => Some(StructureBundles {
-                structures,
-                sets,
-                pools,
-            }),
-            _ => None,
+        let (structures, structure_resources) = if let Some(structures) = structures {
+            let structures = joined(structures, profile, "structure_resources")?;
+            let bundles = match (
+                read_optional_bundle(dir, ov, "structures")?,
+                read_optional_bundle(dir, ov, "structure_sets")?,
+                read_optional_bundle(dir, ov, "template_pools")?,
+            ) {
+                (Some(structures), Some(sets), Some(pools)) => Some(StructureBundles {
+                    structures,
+                    sets,
+                    pools,
+                }),
+                _ => None,
+            };
+            (structures, bundles)
+        } else {
+            (None, None)
         };
         let behaviours = joined(behaviours, profile, "block_behaviours");
         Ok(Arc::new(Self {
@@ -852,6 +888,7 @@ impl GeneratorData {
 /// WORLD_SURFACE(_WG), OCEAN_FLOOR(_WG) and MOTION_BLOCKING(_NO_LEAVES)
 /// heightmaps primed. Fluid positions scheduled for postprocessing are kept in
 /// `terrain.postprocessing()`.
+#[derive(Clone)]
 pub struct ProtoChunk {
     pub terrain: TerrainChunk<'static, GenBlockStates>,
     biomes: BiomeChunk<BiomeId>,

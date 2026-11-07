@@ -24,7 +24,7 @@ pub(super) fn biome_water_fog_color(json: &str) -> io::Result<u32> {
     ))
 }
 
-fn read_color(value: &serde_json::Value, default: u32) -> u32 {
+pub(super) fn read_color(value: &serde_json::Value, default: u32) -> u32 {
     let color = value.as_i64().map(|n| n as u32).or_else(|| {
         value
             .as_str()

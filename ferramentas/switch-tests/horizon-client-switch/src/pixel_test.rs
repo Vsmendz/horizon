@@ -227,6 +227,18 @@ unsafe fn verify_pixels(gl: &glow::Context, device: &wgpu_hal::gles::Device) {
             }
             device.destroy_texture(inferred);
         }
+        for layers in [6, 15, 36, 42, 48, 100] {
+            descriptor.size.depth_or_array_layers = layers;
+            let atlas = device.create_texture_2d_array(&descriptor).unwrap();
+            let wgpu_hal::gles::TextureInner::Texture { raw, target } = atlas.inner else {
+                panic!("expected explicit 2D array storage");
+            };
+            assert_eq!(target, glow::TEXTURE_2D_ARRAY, "{layers} layers");
+            gl.bind_texture(glow::TEXTURE_2D_ARRAY, Some(raw));
+            assert_eq!(gl.get_error(), glow::NO_ERROR, "{layers} layers");
+            device.destroy_texture(atlas);
+        }
+        descriptor.size.depth_or_array_layers = 42;
         let atlas = device.create_texture_2d_array(&descriptor).unwrap();
         let wgpu_hal::gles::TextureInner::Texture {
             raw: texture,
@@ -503,6 +515,47 @@ unsafe fn verify_pixels(gl: &glow::Context, device: &wgpu_hal::gles::Device) {
             assert_eq!(gl.get_error(), glow::NO_ERROR);
             gl.delete_program(opaque);
             gl.delete_program(water);
+        }
+        #[cfg(feature = "vanilla-visuals")]
+        {
+            let effects = program(
+                gl,
+                &format!("{HORIZON_WGSL_SHADER}{}", super::VISUALS_WGSL),
+                "fs_effect",
+            );
+            gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+            gl.use_program(Some(effects));
+            gl.enable(glow::BLEND);
+            gl.blend_func_separate(
+                glow::SRC_ALPHA,
+                glow::ONE_MINUS_SRC_ALPHA,
+                glow::ONE,
+                glow::ONE_MINUS_SRC_ALPHA,
+            );
+            gl.depth_mask(false);
+            let verts = [[-0.75, -0.75], [0.75, -0.75], [0.0, 0.75]].map(|[x, y]| TerrainVertex {
+                pos: [x, y, 0.2],
+                normal: [0.0, 1.0, 0.0],
+                uv_layer: [0.25, 0.25, 41.0],
+                color_ao: [1.0, 0.0, 0.0, 0.5],
+            });
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                bytemuck::cast_slice(&verts),
+                glow::STREAM_DRAW,
+            );
+            gl.draw_arrays(glow::TRIANGLES, 0, 3);
+            assert!(
+                pixel(gl, 32, 32)
+                    .into_iter()
+                    .zip([128u8, 0, 127, 255])
+                    .all(|(a, b)| a.abs_diff(b) <= 1)
+            );
+            assert_eq!(pixel(gl, 1, 1), [0, 0, 255, 255]);
+            assert_eq!(gl.get_error(), glow::NO_ERROR);
+            gl.depth_mask(true);
+            gl.disable(glow::BLEND);
+            gl.delete_program(effects);
         }
         #[cfg(feature = "first-person-polish")]
         {

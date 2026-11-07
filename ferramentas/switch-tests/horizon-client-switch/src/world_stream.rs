@@ -37,9 +37,7 @@ use horizon_world::{
     heightmap::{Heightmap, HeightmapChunk, HeightmapType},
 };
 #[cfg(feature = "vanilla")]
-use horizon_world::{
-    heightmap::HeightmapType, registry::BlockStateId, worldgen::generator::GeneratorWorker,
-};
+use horizon_world::{heightmap::HeightmapType, registry::BlockStateId};
 #[cfg(feature = "vanilla")]
 use std::sync::Arc;
 
@@ -153,6 +151,8 @@ pub struct StreamChange {
     pub read_us: u128,
     pub save_us: u128,
     pub generated_us: Vec<(Key, u128)>,
+    #[cfg(feature = "vanilla-visuals")]
+    pub(crate) features: crate::features::FeatureStats,
 }
 
 struct Departure {
@@ -199,7 +199,7 @@ impl StreamWorker {
             .stack_size(4 << 20)
             .spawn(move || {
                 #[cfg(feature = "vanilla")]
-                let mut worker = storage.vanilla.generator.worker();
+                let mut worker = vanilla::Generation::new(&storage.vanilla);
                 while let Ok(plan) = requests.recv() {
                     if responses
                         .send(storage.prepare(
@@ -594,7 +594,7 @@ impl HorizonClientWorld {
     fn prepare(
         &self,
         plan: StreamPlan,
-        #[cfg(feature = "vanilla")] worker: &mut GeneratorWorker,
+        #[cfg(feature = "vanilla")] worker: &mut vanilla::Generation,
     ) -> io::Result<PreparedStream> {
         let start = Instant::now();
         let mut change = StreamChange::default();
@@ -615,7 +615,7 @@ impl HorizonClientWorld {
                     #[cfg(not(feature = "vanilla"))]
                     let col = self.generate(key)?;
                     #[cfg(feature = "vanilla")]
-                    let col = vanilla::generate(worker, pos)?;
+                    let col = worker.generate(pos)?;
                     change
                         .generated_us
                         .push((key, started.elapsed().as_micros()));
@@ -623,6 +623,10 @@ impl HorizonClientWorld {
                 }
             };
             arrivals.push((key, col));
+        }
+        #[cfg(feature = "vanilla-visuals")]
+        {
+            change.features = worker.take_feature_stats();
         }
         let mut departures = Vec::with_capacity(plan.departures.len());
         for departure in plan.departures {
@@ -694,7 +698,7 @@ impl HorizonClientWorld {
         let prepared = self.prepare(
             plan,
             #[cfg(feature = "vanilla")]
-            &mut self.vanilla.generator.worker(),
+            &mut vanilla::Generation::new(&self.vanilla),
         )?;
         Ok(self.apply_stream(prepared))
     }
