@@ -1,5 +1,22 @@
 # Current Switch runtime checkpoint
 
+## Test 10 continuation
+
+The Test 9 hardware run is confirmed by the owner and by the local SD log. It presented 33,252 frames, averaged 59.66 FPS, had 49 frame intervals above 33 ms, peaked at 203.084 ms, and presented its first frame at 63.860 s. Water and the first-person animations were visually approved. The held water cube was oversized. The local checkpoint branch `switch-test10-checkpoint` points to the pre-Test 10 commit `20e1d6085`.
+
+The Test 10 development target is `test10_vanilla_world_visuals`, with a separate save at `sdmc:/switch/horizon/saves/switch_vanilla_test10/`. The original generator decorates bounded tiles on the world worker. The initial AArch64 build linked. The first host run passed 33 tests and failed the RomFS model test on a sprite without an atlas layer. A replacement build must pass that test, the full host suite, and the ELF/NRO/RomFS audit before hardware validation. The previous 20 NRO digests were verified before development.
+
+Reproduce in WSL from the repository root.
+
+```sh
+source ferramentas/env.sh
+CARGO_NET_OFFLINE=true python3 ferramentas/switch-tests/build.py test10_vanilla_world_visuals
+```
+
+Test 10 stages only private local game resources in the ignored output directory. It needs the Test 7 worldgen bundle and the Java 26.3 gameplay facts. The report records how to export them. Structures, full light propagation, and full-game integration remain separate work.
+
+## Historical checkpoints
+
 Date: 2026-11-05. Lead: Codex. Active Alethe profile: base (existing user configuration).
 Alethe orchestration: C:/Users/Pc vinw/AppData/Roaming/Alethe/orchestrations/20261105-171345-horizon-switch-std-abi
 Provider: Antigravity 1.5.1, existing Google subscription authentication. No API key configured.
