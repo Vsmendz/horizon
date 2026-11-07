@@ -128,6 +128,12 @@ pub enum VoxelBlock {
     Cactus,
     #[cfg(feature = "vanilla-visuals")]
     Glass,
+    #[cfg(feature = "vanilla-visuals")]
+    BrownMushroomBlock,
+    #[cfg(feature = "vanilla-visuals")]
+    RedMushroomBlock,
+    #[cfg(feature = "vanilla-visuals")]
+    MushroomStem,
 }
 
 impl VoxelBlock {
@@ -198,7 +204,7 @@ impl VoxelBlock {
     ];
 
     #[cfg(feature = "vanilla-visuals")]
-    pub const VISUAL_MODELS: [Self; 32] = [
+    pub const VISUAL_MODELS: [Self; 35] = [
         Self::BirchLog,
         Self::BirchLeaves,
         Self::SpruceLog,
@@ -231,6 +237,9 @@ impl VoxelBlock {
         Self::LilyPad,
         Self::Cactus,
         Self::Glass,
+        Self::BrownMushroomBlock,
+        Self::RedMushroomBlock,
+        Self::MushroomStem,
     ];
 
     pub fn block_name(self) -> &'static str {
@@ -356,6 +365,12 @@ impl VoxelBlock {
             Self::Cactus => "cactus",
             #[cfg(feature = "vanilla-visuals")]
             Self::Glass => "glass",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::BrownMushroomBlock => "brown_mushroom_block",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::RedMushroomBlock => "red_mushroom_block",
+            #[cfg(feature = "vanilla-visuals")]
+            Self::MushroomStem => "mushroom_stem",
         }
     }
 
@@ -482,6 +497,13 @@ impl VoxelBlock {
             "cactus" => Self::Cactus,
             #[cfg(feature = "vanilla-visuals")]
             "glass" => Self::Glass,
+            #[cfg(feature = "vanilla-visuals")]
+            "brown_mushroom_block" => Self::BrownMushroomBlock,
+            #[cfg(feature = "vanilla-visuals")]
+            "red_mushroom_block" => Self::RedMushroomBlock,
+            #[cfg(feature = "vanilla-visuals")]
+            "mushroom_stem" => Self::MushroomStem,
+
             _ => Self::Air,
         }
     }

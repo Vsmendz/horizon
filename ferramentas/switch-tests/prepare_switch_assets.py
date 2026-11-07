@@ -65,6 +65,8 @@ VANILLA_BLOCKS = [
 
 VISUAL_BLOCKS = ['birch_log', 'birch_leaves', 'spruce_log', 'spruce_leaves', 'dark_oak_log', 'dark_oak_leaves', 'jungle_log', 'jungle_leaves', 'acacia_log', 'acacia_leaves', 'cherry_log', 'cherry_leaves', 'mangrove_log', 'mangrove_leaves', 'oak_sapling', 'short_grass', 'fern', 'dead_bush', 'dandelion', 'poppy', 'blue_orchid', 'allium', 'azure_bluet', 'oxeye_daisy', 'cornflower', 'lily_of_the_valley', 'brown_mushroom', 'red_mushroom', 'sugar_cane', 'lily_pad', 'cactus', 'glass']
 
+VISUAL_BLOCKS += ["brown_mushroom_block", "red_mushroom_block", "mushroom_stem"]
+
 def sha1_file(path: Path) -> str:
     h = hashlib.sha1()
     with path.open("rb") as f:

@@ -98,7 +98,7 @@ impl Vanilla {
             return Err(invalid("unexpected 26.3 overworld height"));
         }
         let spawn = generator.spawn_position().map_err(io::Error::other)?;
-        let visuals = (0..registry.len())
+        let visuals: Box<[VoxelBlock]> = (0..registry.len())
             .map(|i| {
                 let id = BlockStateId(i as u32);
                 let facts = data.block_states().get(id);
@@ -122,6 +122,17 @@ impl Vanilla {
                 }
             })
             .collect();
+        #[cfg(feature = "vanilla-visuals")]
+        if decorated {
+            let mut missing = std::collections::BTreeSet::new();
+            for (i, visual) in visuals.iter().enumerate() {
+                let state = registry.state(BlockStateId(i as u32)).unwrap();
+                if *visual == VoxelBlock::Stone && state.name != "minecraft:stone" {
+                    missing.insert(state.name.as_str());
+                }
+            }
+            log(&format!("MODEL_FALLBACK stone_names={missing:?}"));
+        }
         #[cfg(feature = "vanilla-water")]
         let fluids = horizon_world::fluid::FluidStateTable::new(registry)?;
         #[cfg(feature = "vanilla-water")]

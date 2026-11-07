@@ -35,6 +35,8 @@ mod fluid_geometry;
 #[cfg(feature = "vanilla")]
 mod mesh_upload;
 #[cfg(feature = "vanilla-visuals")]
+mod state_models;
+#[cfg(feature = "vanilla-visuals")]
 mod visuals;
 #[cfg(feature = "vanilla-water")]
 mod water;
@@ -924,6 +926,8 @@ pub struct BakedAssetRegistry {
     #[cfg(feature = "vanilla-visuals")]
     bucket_layer: u32,
     #[cfg(feature = "vanilla-visuals")]
+    state_quads: BTreeMap<u32, Vec<ModelQuad>>,
+    #[cfg(feature = "vanilla-visuals")]
     bubble: u32,
     #[cfg(feature = "vanilla-visuals")]
     splash: [u32; 4],
@@ -1143,6 +1147,8 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
     }
     let model_lib = ModelLibrary::new(models_map).map_err(|e| format!("ModelLibrary::new: {e}"))?;
 
+    #[cfg(feature = "vanilla-visuals")]
+    let (state_quads, defaults) = state_models::bake(root, &model_lib)?;
     let mut baked_quads = BTreeMap::new();
     #[cfg(feature = "first-person-polish")]
     let mut hand_models = BTreeMap::new();
@@ -1153,6 +1159,12 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
     let blocks = blocks.chain(VoxelBlock::VISUAL_MODELS);
     for block in blocks {
         let name = block.block_name();
+        #[cfg(feature = "vanilla-visuals")]
+        if name.contains("mushroom_block") || name == "mushroom_stem" {
+            baked_quads.insert(block, state_quads[&defaults[name]].clone());
+            hand_models.insert(block, Mat4::IDENTITY);
+            continue;
+        }
         let bs_path = root.join(format!("assets/minecraft/blockstates/{name}.json"));
         let bs_text =
             fs::read_to_string(&bs_path).map_err(|e| format!("read {}: {e}", bs_path.display()))?;
@@ -1277,6 +1289,8 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
         hand_models,
         #[cfg(feature = "vanilla-visuals")]
         bucket_layer,
+        #[cfg(feature = "vanilla-visuals")]
+        state_quads,
         #[cfg(feature = "vanilla-visuals")]
         bubble,
         #[cfg(feature = "vanilla-visuals")]
@@ -1521,7 +1535,14 @@ impl HorizonClientWorld {
                     if block == VoxelBlock::Air {
                         continue;
                     }
-                    let Some(quads) = assets.baked_quads.get(&block) else {
+                    #[cfg(feature = "vanilla-visuals")]
+                    let quads = assets
+                        .state_quads
+                        .get(&id.0)
+                        .or_else(|| assets.baked_quads.get(&block));
+                    #[cfg(not(feature = "vanilla-visuals"))]
+                    let quads = assets.baked_quads.get(&block);
+                    let Some(quads) = quads else {
                         continue;
                     };
                     let origin = [x as f32, y as f32, z as f32];
@@ -3991,6 +4012,31 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                     || edges.pressed(PadButton::DPadLeft)
             };
             if attack_edge {
+                #[cfg(feature = "vanilla-visuals")]
+                if let Some(hit) = targeted_hit
+                    && let Some(id) = guard.state_at(hit.block)
+                {
+                    let state = guard.vanilla.generator.data().registry().state(id).unwrap();
+                    let visual = guard.get_block(hit.block);
+                    let quads = assets
+                        .state_quads
+                        .get(&id.0)
+                        .or_else(|| assets.baked_quads.get(&visual));
+                    let materials: Vec<_> = quads
+                        .into_iter()
+                        .flatten()
+                        .map(|quad| {
+                            (
+                                &quad.material.sprite,
+                                assets.sprite_to_layer.get(&quad.material.sprite),
+                            )
+                        })
+                        .collect();
+                    log_line(&format!(
+                        "BLOCK_MODEL pos={:?} state={} name={} properties={:?} visual={visual:?} materials={materials:?}",
+                        hit.block, id.0, state.name, state.properties
+                    ));
+                }
                 #[cfg(feature = "first-person-polish")]
                 player.hand.attack();
             }
