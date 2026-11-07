@@ -11,10 +11,33 @@
 | Isolated vanilla terrain | Hardware confirmed | Test 7. Matched Java 26.3 reference, heightmaps, NBT and determinism on physical Switch |
 | Vanilla terrain in the playable client | Hardware confirmed | Test 8E confirmed textured terrain, the hotbar, asynchronous streaming, edits and clean shutdown |
 | Vanilla water geometry and transparency | Executed on hardware | Test 8F exited cleanly. Confirm the shoreline and water appearance outside the submerged region |
-| Vanilla first-person polish | Awaiting physical validation | Test 9 integrates block display transforms, tick-based swing and equip animations, FOV, save recovery, water movement and underwater fog |
+| Vanilla first-person polish | Hardware confirmed | Test 9 verified water and first-person animation. Held water was oversized |
+| Vanilla decoration and visual effects | Awaiting hardware validation | Test 10 uses a new world and keeps the Test 9 save separate |
 | Singleplayer mechanics and essential interfaces | Pending | Extend the validated world and connect the original player, inventory, crafting and menu systems |
 | Entities, audio and performance tuning | Pending | Establish resource budgets from hardware measurements |
 
 Each new hardware milestone uses a separate NRO. Experimental save formats use separate SD directories.
 
 Test 6 measured a 41 ms median synchronous transition before meshing. Test 6B moved generation and region I/O to one worker. The current client streams the vanilla Overworld at Y −64 through 319 and retains the incremental per-section GPU upload budget.
+
+
+## Playable port matrix
+
+| Subsystem | Current state | Original code and remaining integration |
+| --- | --- | --- |
+| Startup and shutdown | Test 9 hardware confirmed. Test 10 awaiting hardware | Custom Rust/newlib runtime, libnx and EGL. Validate first-frame time and clean exit with decoration |
+| World, chunks and biomes | Partial | Original `GeneratorData`, `OverworldGenerator`, terrain, carvers and FEATURES. Compare decoration against Java 26.3 and validate tree boundaries |
+| Structures and dimensions | Available in Horizon | Original structure generation and level management. Connect persistence for block entities, entities and per-dimension storage before enabling |
+| Streaming and storage | Test 9 hardware confirmed. Test 10 awaiting hardware | Original `RegionFile`, NBT palettes and heightmaps. Separate Test 10 world. Player persistence currently covers position, rotation and selected slot |
+| Controls, physics and animation | Partial | Shared movement, collision, raycasting, camera and first-person animations, with libnx input. Full controller UI navigation and rebinding pending |
+| Textures, fluid geometry and HUD | Test 9 hardware confirmed. Test 10 awaiting hardware | Existing GLES atlas and water pass. Test 10 adds cutouts, biome tints, the held bucket and particles. HUD currently covers the crosshair and hotbar |
+| Lighting, sky and weather | Partial | Test 10 adds local emission and biome sky color. Bring over the original light engine, the world clock, sky passes and weather once a shared simulation drives them |
+| Blocks, items and inventory | Partial | Original block registry, collision, `PlayerInventory` and item baking. The hotbar still holds prototype block stacks. Persist actual item stacks and equipment before crafting and containers |
+| Mining, crafting and survival | Partial | Test 10 adds held-trigger mining with exported hardness. The original recipe matching, `FoodData`, damage and death mechanics exist. Connect them to the authoritative singleplayer simulation |
+| Fluids and redstone simulation | Available in Horizon | Fluid shape and tint render on Switch. Original level ticks and fluid/redstone behaviors still need an authoritative tick loop |
+| Entities, AI and spawning | Available in Horizon | Original mobs, entity tracking, spawn/despawn and NBT. Need level tick integration, rendering and entity persistence |
+| Menus, world selection and settings | Platform adaptation | Desktop winit UI needs a Switch event and input boundary. Existing text and layout logic should remain shared |
+| Audio | Platform adaptation | Desktop mixer and sound events exist. A libnx PCM output path, asset preparation and audio latency tests are pending |
+| Networking and commands | Platform adaptation | Reuse the original memory pipe before exposing LAN. Desktop integrated server is still coupled to `Game`, `Audio` and UI resources. Switch socket/runtime and crypto paths require separate validation |
+
+The next integration boundary is the authoritative server. Start with the in-memory `horizon_protocol::connection::Pipe` used by the desktop integrated server and move the required simulation inputs out of the winit-owned `Game`. Keep the Switch window, GLES and pad code at the client boundary. Persist original item stacks and level data there before adding crafting and entities. The stable `horizon_switch.nro` name is reserved for a later consolidated build.

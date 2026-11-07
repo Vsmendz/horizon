@@ -313,7 +313,7 @@
       "test": "test9_vanilla_first_person_polish",
       "build": "passed",
       "link": "passed",
-      "hardware": "pending",
+      "hardware": "user_confirmed",
       "file": "ferramentas/switch-tests/out/test9_vanilla_first_person_polish.nro",
       "bytes": 57966881,
       "sha256": "cdcfa680ce8b76710655762d0e6a2a337727d59a3b41120797210a157104a9cb",
@@ -322,7 +322,24 @@
       "build_log": "ferramentas/switch-tests/out/test9_vanilla_first_person_polish.build.log",
       "offline_log": "ferramentas/switch-tests/out/test9_vanilla_first_person_polish.offline.log",
       "test_log": "ferramentas/switch-tests/out/test9.gles.log",
-      "runtime_log": "sdmc:/switch/horizon-tests/test9_vanilla_first_person_polish.log"
+      "runtime_log": "sdmc:/switch/horizon-tests/test9_vanilla_first_person_polish.log",
+      "hardware_log": "test9_vanilla_first_person_polish.log",
+      "confirmation": "Water and first-person animations visually approved. 33,252 frames, 59.66 FPS, 49 frame intervals above 33 ms, peak 203.084 ms, first frame 63.860 s. 19 breaks, 113 placements, one saved column, RESULT=0, RETURN 0. The held water cube was oversized."
+    },
+    {
+      "test": "test10_vanilla_world_visuals",
+      "build": "passed",
+      "link": "passed",
+      "hardware": "pending",
+      "file": "ferramentas/switch-tests/out/test10_vanilla_world_visuals.nro",
+      "bytes": 58630065,
+      "sha256": "83ba0e8e2e920fac39ab71b0f388b756be74423dd7615c9067d9cbecce810643",
+      "elf": "ferramentas/switch-tests/out/test10_vanilla_world_visuals.elf",
+      "elf_sha256": "3e887925cd9df0bac0f17e33b38791b03beaae7b825e83afe8f5d30744982aab",
+      "build_log": "ferramentas/switch-tests/out/test10_vanilla_world_visuals.build.log",
+      "offline_log": "ferramentas/switch-tests/out/test10_vanilla_world_visuals.offline.log",
+      "test_log": "ferramentas/switch-tests/out/test10.gles.log",
+      "runtime_log": "sdmc:/switch/horizon-tests/test10_vanilla_world_visuals.log"
     }
   ]
 }

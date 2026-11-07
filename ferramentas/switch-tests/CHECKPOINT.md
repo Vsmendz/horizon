@@ -4,7 +4,9 @@
 
 The Test 9 hardware run is confirmed by the owner and by the local SD log. It presented 33,252 frames, averaged 59.66 FPS, had 49 frame intervals above 33 ms, peaked at 203.084 ms, and presented its first frame at 63.860 s. Water and the first-person animations were visually approved. The held water cube was oversized. The local checkpoint branch `switch-test10-checkpoint` points to the pre-Test 10 commit `20e1d6085`.
 
-The Test 10 development target is `test10_vanilla_world_visuals`, with a separate save at `sdmc:/switch/horizon/saves/switch_vanilla_test10/`. The original generator decorates bounded tiles on the world worker. The initial AArch64 build linked. The first host run passed 33 tests and failed the RomFS model test on a sprite without an atlas layer. A replacement build must pass that test, the full host suite, and the ELF/NRO/RomFS audit before hardware validation. The previous 20 NRO digests were verified before development.
+Test 10 built and linked for AArch64 and passed the offline gates at `50e59f4b4`. Use `out/test10_vanilla_world_visuals.nro`, SHA-256 `83ba0e8e2e920fac39ab71b0f388b756be74423dd7615c9067d9cbecce810643`. Hardware validation is pending. Its separate save is `sdmc:/switch/horizon/saves/switch_vanilla_test10/` and its log is `sdmc:/switch/horizon-tests/test10_vanilla_world_visuals.log`. All 20 earlier NRO digests match.
+
+The full host suite passed 34 tests with two opt-in probes skipped. The legacy suite passed 14 with one ignored. The ELF/NRO audit found zero undefined symbols and verified all 1,831 RomFS files. Test 10 adds worker-side FEATURES, material particles, held-trigger mining, biome colors, cutouts and the water bucket model. Structures are disabled. The host run verified decorated state and NBT reconstruction. The Switch tile schedule still needs a Java oracle comparison and physical seam testing.
 
 Reproduce in WSL from the repository root.
 
@@ -13,7 +15,9 @@ source ferramentas/env.sh
 CARGO_NET_OFFLINE=true python3 ferramentas/switch-tests/build.py test10_vanilla_world_visuals
 ```
 
-Test 10 stages only private local game resources in the ignored output directory. It needs the Test 7 worldgen bundle and the Java 26.3 gameplay facts. The report records how to export them. Structures, full light propagation, and full-game integration remain separate work.
+Test 10 stages only private local game resources in the ignored output directory. It needs the Test 7 worldgen bundle and the Java 26.3 gameplay facts. The report records how to export them. Structures, full light propagation and full-game integration remain separate work.
+
+For the next session, use the matrix in `ROADMAP.md`. The integrated server still starts a desktop-owned `Game` that requires `UiResources` and `Audio`. Winit 0.30.13 has no libnx platform backend. Keep the working GLES input/render loop and isolate authoritative server initialization and ticks from desktop dependencies. The original item NBT and in-memory protocol pipe are the first integration points. The full client cross-check with the Switch libc patch stopped at root lockfile resolution. Preserve the desktop lockfile and repeat this probe in an isolated worktree.
 
 ## Historical checkpoints
 

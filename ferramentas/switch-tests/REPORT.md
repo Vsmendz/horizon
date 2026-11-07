@@ -5,6 +5,69 @@ Hardware confirmations were supplied by the user in this chat after each nxlink 
 No screenshot, captured framebuffer, or runtime network trace was obtained.
 See results.json for artifact sizes, SHA-256 digests and individual confirmations.
 
+## Test 10 world decoration and visual effects
+
+The owner approved Test 9 on physical hardware. Its SD log records 33,252 frames, 59.66 FPS, 49 intervals over 33 ms, a maximum interval of 203.084 ms and a first frame at 63.860 s. It also records 19 breaks, 113 placements, one saved column, `RESULT=0` and `RETURN 0`. The previous held-water cube was oversized.
+
+Test 10 uses the original generator's biomes, terrain and carvers and calls `GeneratorWorker::decorate` on the streaming worker. Three-by-three published tiles have a one-chunk decoration halo and a two-chunk terrain halo. The schedule is independent of request order. Conflicting writes near tile boundaries may resolve differently from Java. The runtime skips structure tables for this world. The separate save preserves registry states, quart biomes and heightmaps through the existing RegionFile and NBT storage.
+
+The atlas has 101 layers including the white HUD layer. The HAL explicitly allocates a 2D array. Leaves and plants use alpha cutoff. Water, ice and glass use the section-sorted translucent pass. The asset exporter recognizes object-valued sprites such as glass. The water bucket uses the original item baker and first-person transform. Placement still sets a water source. Grass and leaves use biome climate colormaps and overrides. Biome sky color interpolates as the player moves. Emission improves emissive faces. Full light propagation, biome color blending, clouds and a persistent world clock remain open.
+
+The effect pass shares the atlas, blends with depth testing and leaves the depth buffer unchanged. The 20 Hz simulation caps particle storage at 256. Block impact and destruction reuse the desktop emission geometry. Water entry and exit trigger splashes, with bubbles on entry. Holding ZR advances mining using exported Java hardness and tool requirements. D-pad left retains instant edits. Crack stages clear on release, target change or destruction.
+
+| Gate | Result |
+| --- | --- |
+| AArch64 Rust, static link and ELF | PASS OFFLINE. ELF64 AArch64, zero undefined symbols and no dynamic dependencies |
+| NRO and RomFS | PASS OFFLINE. Valid NRO0 and ASET ranges. All 1,831 entries matched staging and all 20 prior NRO digests matched |
+| Mesa GLES and vanilla host tests | PASS OFFLINE. 34 passed, two opt-in probes skipped in the full suite. Explicit array targets at 6, 15, 36, 42, 48 and 100 layers. Covered framebuffer readback, terrain, water, HUD, particle blending and held-item shader |
+| Legacy streaming | PASS OFFLINE. 14 passed, one ignored |
+| Decoration | PASS OFFLINE for Rust determinism, changed terrain and NBT reconstruction. Two tiles generated 70 pristine columns, placed 3,220 features, reported zero unsupported/failed invocations and peaked at 5,028,622 counted terrain bytes. The sampled columns gained 455 dark oak logs, 1,246 dark oak leaves and 54 short grass blocks |
+| Java 26.3 parity | Existing terrain fixture passed. Java parity of the Switch FEATURES schedule remains open |
+| Physical hardware | AWAITING HARDWARE VALIDATION. Startup time, frame pacing and memory remain unmeasured for Test 10 |
+
+Test 9 spent 58.470 s in the block-table task and 13.650 s in the concurrent structure-resource task. Test 10 skips the latter. These tasks overlap, so that difference does not directly translate into first-frame savings. The decorated worker also adds world generation work. Compare `INIT_TABLE`, `INIT first_frame_ms`, `FEATURES`, `EFFECTS`, `UPLOAD` and `FRAME_TIMING` on the console. The Test 9 peak interval lacks a trace tying it to a specific operation.
+
+The opt-in host block-table probe also passed. It measured 55/372 ms for collision read/decode, 70/655 ms for properties, and 44/339 ms for support, plus 82 ms to build 6,093 collision shapes. These Linux WSL measurements separate reading from decode and validation. On this host the larger cost is decoding, so the next optimization should profile the decoder on Switch before changing the on-disk format.
+
+### Reproduction
+
+The build requires the Test 7 worldgen bundle and local Java 26.3 `gameplay-facts.json`. If the prepared resources lack that file, export it with a JDK 25 and the local 26.3 oracle libraries in WSL.
+
+```sh
+PYTHONPATH="$PWD/tools" python3 - <<'PYTHON'
+from pathlib import Path
+import oracle_harness as harness
+from test_rust_parity import verify_artifacts
+from test_model_baking_parity import client_libraries
+
+lock, jars, _ = verify_artifacts()
+build = Path.cwd() / "ferramentas/switch-tests/out/preparation/visual-facts"
+build.mkdir(parents=True, exist_ok=True)
+name = "VanillaGameplayFactsExporter"
+classes, deps, _ = harness.compile_oracle(
+    build, name, jars, client_libraries(), lock["minecraft"]["java_major"]
+)
+harness.java_run(build, classes, deps, name, [build / "gameplay-facts.json"], "export")
+PYTHON
+
+source ferramentas/env.sh
+CARGO_NET_OFFLINE=true python3 ferramentas/switch-tests/build.py test10_vanilla_world_visuals
+python3 ferramentas/switch-tests/test_streaming.py
+HORIZON_STREAM_TEST_ROOT="$(mktemp -d)" EGL_PLATFORM=surfaceless LIBGL_ALWAYS_SOFTWARE=1   HORIZON_VANILLA_ROOT="$PWD/ferramentas/switch-tests/out/test7-worldgen-romfs"   CARGO_NET_OFFLINE=true cargo test   --manifest-path ferramentas/switch-tests/horizon-client-switch/Cargo.toml   --features render-diagnostics,vanilla-visuals --lib -- --nocapture
+```
+
+The NRO has 58,630,065 bytes and SHA-256 `83ba0e8e2e920fac39ab71b0f388b756be74423dd7615c9067d9cbecce810643`. Start Sphaira NetLoader and send it from WSL.
+
+```sh
+./ferramentas/devkitpro/tools/bin/nxlink -a 192.168.1.5 ferramentas/switch-tests/out/test10_vanilla_world_visuals.nro -s
+```
+
+Check trees and leaves across chunk boundaries, the HUD, water and the held bucket. Place a water source and check transparency. Hold ZR to see impact and crack stages. Release ZR or change targets to clear the cracks. Break and place a block, save, close with + and reopen to check persistence. Inspect `sdmc:/switch/horizon-tests/test10_vanilla_world_visuals.log`.
+
+### Full-client continuation
+
+Winit 0.30.13 has no libnx event-loop backend. The original singleplayer entry uses a server-side `Game` and an in-memory protocol pipe, with desktop UI and audio resources required at initialization. The direct cross-check with the Switch libc patch stopped at lockfile resolution under `--locked`. Keep the desktop lockfile untouched and continue the full-client probe in an isolated worktree. The roadmap tracks gameplay and platform gaps.
+
 ## SDK and desktop isolation
 
 The suggested old path /mnt/c/Users/Pc vinw/Documents/mine/horizon/ferramentas/devkitpro did not exist.

@@ -88,25 +88,27 @@ python3 ferramentas/switch-tests/test_streaming.py --vanilla
 python3 ferramentas/switch-tests/test_streaming.py
 
 # 3. Build test executable and package RomFS into NRO
-CARGO_NET_OFFLINE=true python3 ferramentas/switch-tests/build.py test8_vanilla_streaming
+CARGO_NET_OFFLINE=true python3 ferramentas/switch-tests/build.py test10_vanilla_world_visuals
 ```
 Artifacts are emitted to `ferramentas/switch-tests/out/`:
-- `test8_vanilla_streaming.nro`
-- `test8_vanilla_streaming.elf`
-- `test8_vanilla_streaming.map`
+- `test10_vanilla_world_visuals.nro`
+- `test10_vanilla_world_visuals.elf`
+- `test10_vanilla_world_visuals.map`
 
 ### Deploying to Hardware
 Send the NRO to a Switch running the Homebrew Menu (NetLoader) over your local network:
 ```sh
-ferramentas/devkitpro/tools/bin/nxlink -a <SWITCH_IP> ferramentas/switch-tests/out/test8_vanilla_streaming.nro
+ferramentas/devkitpro/tools/bin/nxlink -a <SWITCH_IP> ferramentas/switch-tests/out/test10_vanilla_world_visuals.nro
 ```
 Runtime logs are written directly to the SD card at:
-`sdmc:/switch/horizon-tests/test8_vanilla_streaming.log`
+`sdmc:/switch/horizon-tests/test10_vanilla_world_visuals.log`
 
 ### Current Capabilities & Known Limitations
 - **What works on hardware (Tests 1–7)**: EGL/GLES3 initialization, controller input, textured voxel rendering, first-person physics/camera, raycast block breaking/placing, persistent Anvil `.mca` saves, async chunk streaming worker (Test 6B), and exact Java 26.3 chunk generation matching reference fingerprints and NBT round trip (Test 7).
-- **Test 8 (Awaiting physical confirmation)**: Integrates full vanilla terrain generation (-64 to 319 height, 24 sections) with the playable async client, isolated in `sdmc:/switch/horizon/saves/switch_vanilla_test8/`.
-- **Known Limitations**: Cold startup time takes ~60 seconds on flash storage while loading and deserializing full worldgen registries and tables (under optimization); singleplayer GUI/inventories and audio remain pending later milestones.
+- **Test 9** passed on physical hardware. The owner approved water and first-person animation.
+- **Test 10** adds original world decoration and visual effects. Its console validation is pending. It uses `sdmc:/switch/horizon/saves/switch_vanilla_test10/`.
+
+Build prerequisites and current test status are tracked in [the Switch report](ferramentas/switch-tests/REPORT.md). The [Switch roadmap](ferramentas/switch-tests/ROADMAP.md) lists the remaining full-client work.
 
 ## Host a server
 
