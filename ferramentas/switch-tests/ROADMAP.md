@@ -14,6 +14,7 @@
 | Vanilla first-person polish | Hardware confirmed | Test 9 verified water and first-person animation. Held water was oversized |
 | Vanilla decoration and visual effects | Executed on hardware | Test 10 rendered decorated streaming, particles and bucket model (first frame 55.033 s, 5,640 frames); owner reported a visual defect on some woodland trees |
 | Woodland state models and platform storage | Executed on hardware | Test 10B (`test10b_woodland_models.log`): 4,574 frames (~59.48 FPS), max interval 38.995 ms, 180 ABI assertions, `PLATFORM_STORAGE available_bytes=26329186304`, `FEATURES unsupported=0 failed=0`, `RESULT=0`. Visual tree appearance pending; `MODEL_FALLBACK` identified remaining full-block `Stone` fallbacks |
+| Complete 35,723-state vanilla model catalog | Compiled and verified offline; awaiting hardware | Test 11 (`test11_vanilla_model_catalog.nro`, SHA-256 `34b76d6a587bd2b31874237208ad0149f9dc03df5be1eef60e6de8dab81700c5`): binds all 1,286 blocks / 35,723 states (`missing_states=0`, `stone_fallbacks=0`), 1,308 textures in a 3.18 MiB bundle |
 | Singleplayer mechanics and essential interfaces | Pending | Extend the validated world and connect the original player, inventory, crafting and menu systems |
 | Entities, audio and performance tuning | Pending | Establish resource budgets from hardware measurements |
 

@@ -27,7 +27,8 @@ is_integration=name=="test3_horizon_integration"
 is_renderer=name=="test4_horizon_renderer"
 is_worldgen=name=="test7_vanilla_worldgen"
 is_diagnostic=name in ("test8b_vanilla_render_fix", "test8c_gles_pipeline_probe", "test8d_gles_atlas_probe", "test8e_gles_atlas_fix")
-has_visuals=name in ("test10_vanilla_world_visuals", "test10b_woodland_models")
+has_all_models=name=="test11_vanilla_model_catalog"
+has_visuals=name in ("test10_vanilla_world_visuals", "test10b_woodland_models") or has_all_models
 has_polish=name=="test9_vanilla_first_person_polish" or has_visuals
 has_water=name=="test8f_vanilla_water_fix" or has_polish
 is_vanilla=name=="test8_vanilla_streaming" or is_diagnostic or has_water
@@ -44,6 +45,7 @@ is_client=name in (
     "test9_vanilla_first_person_polish",
     "test10_vanilla_world_visuals",
     "test10b_woodland_models",
+    "test11_vanilla_model_catalog",
 )
 is_rust=name in ("test2a_rust", "test2b_rust_egl") or is_std or is_integration or is_renderer or is_client or is_worldgen
 is_c=name=="test2c_posix_c" or is_rust
@@ -59,9 +61,9 @@ if has_network_log: flags += ["-DHORIZON_NXLINK_LOG"]
 obj=build/(name+".o"); elf=build/(name+".elf")
 source=src/("client_entry.c" if is_client or is_worldgen else "renderer_entry.c" if is_renderer else "horizon_entry.c" if is_integration else "std_entry.c" if is_std else "rust_entry.c" if is_rust else name+(".c" if is_c else ".cpp"))
 extra=[]
-stage=out/("test10-romfs" if has_visuals else "test8f-romfs" if has_water else "test8-romfs")
+stage=out/("test11-romfs" if has_all_models else "test10-romfs" if has_visuals else "test8f-romfs" if has_water else "test8-romfs")
 if is_renderer or is_client:
-    asset_args=["--vanilla-visuals"] if has_visuals else ["--vanilla-water"] if has_water else ["--vanilla"] if is_vanilla else []
+    asset_args=["--vanilla-all-models"] if has_all_models else ["--vanilla-visuals"] if has_visuals else ["--vanilla-water"] if has_water else ["--vanilla"] if is_vanilla else []
     run([sys.executable, src/"prepare_switch_assets.py", *asset_args])
 if is_vanilla:
     source_bundle=out/"test7-worldgen-romfs"

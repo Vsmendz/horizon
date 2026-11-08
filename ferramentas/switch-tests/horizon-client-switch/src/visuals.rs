@@ -10,14 +10,15 @@ use horizon_world::worldgen::{biome::BiomeId, generator::GeneratorData};
 use std::{collections::BTreeMap, fs, io, path::Path};
 
 #[derive(Clone, Copy)]
-pub(super) struct BiomeVisual {
+pub(crate) struct BiomeVisual {
     pub grass: [f32; 3],
     pub leaves: [f32; 3],
+    pub dry_foliage: [f32; 3],
     pub sky: [f32; 3],
 }
 
 #[derive(serde::Deserialize)]
-pub(super) struct VisualState(pub f32, pub bool, pub u8);
+pub(crate) struct VisualState(pub f32, pub bool, pub u8);
 
 pub(super) fn load_states(root: &Path, count: usize) -> io::Result<Box<[VisualState]>> {
     let states: Box<[VisualState]> = serde_json::from_reader(std::io::BufReader::new(
@@ -72,6 +73,7 @@ pub(super) fn load_biomes(root: &Path, data: &GeneratorData) -> io::Result<Box<[
     };
     let grass = load("grass")?;
     let leaves = load("foliage")?;
+    let dry_foliage = load("dry_foliage").unwrap_or_else(|_| leaves.clone());
     (0..data.biome_names().len())
         .map(|id| {
             let biome: serde_json::Value =
@@ -91,6 +93,10 @@ pub(super) fn load_biomes(root: &Path, data: &GeneratorData) -> io::Result<Box<[
                 leaves: rgb(crate::water::read_color(
                     &biome["effects"]["foliage_color"],
                     sample(&leaves, temp, rain),
+                )),
+                dry_foliage: rgb(crate::water::read_color(
+                    &biome["effects"]["dry_foliage_color"],
+                    sample(&dry_foliage, temp, rain),
                 )),
                 sky: rgb(crate::water::read_color(
                     &biome["attributes"]["minecraft:visual/sky_color"],
@@ -130,6 +136,39 @@ pub(super) fn tint(
                 }
             },
         ),
+    }
+}
+
+pub(super) fn tint_state(
+    world: &HorizonClientWorld,
+    p: BlockPos,
+    kind: crate::state_models::TintKind,
+    tint_index: i32,
+) -> [f32; 3] {
+    if tint_index < 0 {
+        return [1.0; 3];
+    }
+    match kind {
+        crate::state_models::TintKind::None => [1.0; 3],
+        crate::state_models::TintKind::Fixed(color) => color,
+        crate::state_models::TintKind::BiomeGrass => {
+            biome_at(world, p).map_or([0.48, 0.74, 0.33], |b| b.grass)
+        }
+        crate::state_models::TintKind::BiomeFoliage => {
+            biome_at(world, p).map_or([0.36, 0.66, 0.24], |b| b.leaves)
+        }
+        crate::state_models::TintKind::BiomeDryFoliage => {
+            biome_at(world, p).map_or(rgb(0x5d_4930), |b| b.dry_foliage)
+        }
+        crate::state_models::TintKind::BiomeWater => {
+            if let Some(column) = world.chunks.get(&(p.x >> 4, p.z >> 4)) {
+                let biome = column.biomes.noise_biome([p.x >> 2, p.y >> 2, p.z >> 2]);
+                if let Some(&c) = world.vanilla.water_colors.get(biome.0 as usize) {
+                    return rgb(c);
+                }
+            }
+            rgb(0x3f_76e4)
+        }
     }
 }
 

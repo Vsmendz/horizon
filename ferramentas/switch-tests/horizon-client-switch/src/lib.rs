@@ -928,6 +928,8 @@ pub struct BakedAssetRegistry {
     #[cfg(feature = "vanilla-visuals")]
     state_quads: BTreeMap<u32, Vec<ModelQuad>>,
     #[cfg(feature = "vanilla-visuals")]
+    state_catalog: state_models::StateModelCatalog,
+    #[cfg(feature = "vanilla-visuals")]
     bubble: u32,
     #[cfg(feature = "vanilla-visuals")]
     splash: [u32; 4],
@@ -1080,13 +1082,70 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
     let mut sprite_to_layer = BTreeMap::new();
     let mut animations = Vec::new();
 
+    let tex_bundle_path = root.join("assets/textures_bundle.bin");
+    let tex_bundle_bytes = if tex_bundle_path.is_file() {
+        Some(
+            fs::read(&tex_bundle_path)
+                .map_err(|e| format!("read {}: {e}", tex_bundle_path.display()))?,
+        )
+    } else {
+        None
+    };
+    let mut tex_cursor = 0usize;
+
     for (idx, tex_rel) in manifest.textures.iter().enumerate() {
         let layer_idx = idx as u32;
-        let png_path = root.join(format!("assets/minecraft/textures/{tex_rel}.png"));
-        let png_bytes =
-            fs::read(&png_path).map_err(|e| format!("read {}: {e}", png_path.display()))?;
+        let (png_bytes, mcmeta_opt): (Cow<'_, [u8]>, Option<String>) =
+            if let Some(ref blob) = tex_bundle_bytes {
+                if tex_cursor + 4 > blob.len() {
+                    return Err(format!("textures_bundle truncated before {tex_rel} png"));
+                }
+                let png_len =
+                    u32::from_le_bytes(blob[tex_cursor..tex_cursor + 4].try_into().unwrap())
+                        as usize;
+                tex_cursor += 4;
+                if tex_cursor + png_len + 4 > blob.len() {
+                    return Err(format!("textures_bundle truncated in {tex_rel} png"));
+                }
+                let png_slice = &blob[tex_cursor..tex_cursor + png_len];
+                tex_cursor += png_len;
+                let mc_len =
+                    u32::from_le_bytes(blob[tex_cursor..tex_cursor + 4].try_into().unwrap())
+                        as usize;
+                tex_cursor += 4;
+                if tex_cursor + mc_len > blob.len() {
+                    return Err(format!("textures_bundle truncated in {tex_rel} mcmeta"));
+                }
+                let mc_opt = if mc_len > 0 {
+                    Some(
+                        std::str::from_utf8(&blob[tex_cursor..tex_cursor + mc_len])
+                            .map_err(|e| format!("mcmeta utf8 {tex_rel}: {e}"))?
+                            .to_string(),
+                    )
+                } else {
+                    None
+                };
+                tex_cursor += mc_len;
+                (Cow::Borrowed(png_slice), mc_opt)
+            } else {
+                let png_path = root.join(format!("assets/minecraft/textures/{tex_rel}.png"));
+                let bytes = fs::read(&png_path)
+                    .map_err(|e| format!("read {}: {e}", png_path.display()))?;
+                let mcmeta_path =
+                    root.join(format!("assets/minecraft/textures/{tex_rel}.png.mcmeta"));
+                let mc_opt = if mcmeta_path.is_file() {
+                    Some(
+                        fs::read_to_string(&mcmeta_path)
+                            .map_err(|e| format!("read {}: {e}", mcmeta_path.display()))?,
+                    )
+                } else {
+                    None
+                };
+                (Cow::Owned(bytes), mc_opt)
+            };
+
         let (side, mut frames) = decode_png_frames(&png_bytes)?;
-        if side == 0 || !ATLAS_SIDE.is_multiple_of(side) {
+        if side == 0 || !side.is_power_of_two() {
             return Err(format!(
                 "Unsupported texture dimensions for {tex_rel}: {side}x{side}"
             ));
@@ -1105,11 +1164,8 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
             }
         }
 
-        let mcmeta_path = root.join(format!("assets/minecraft/textures/{tex_rel}.png.mcmeta"));
         let mut initial_frame = 0usize;
-        if mcmeta_path.is_file() {
-            let mcmeta_text = fs::read_to_string(&mcmeta_path)
-                .map_err(|e| format!("read {}: {e}", mcmeta_path.display()))?;
+        if let Some(mcmeta_text) = mcmeta_opt {
             let meta = AnimationMetadata::from_json(&mcmeta_text)
                 .map_err(|e| format!("AnimationMetadata {tex_rel}: {e}"))?;
             if let Some(clip) = meta
@@ -1136,11 +1192,27 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
     texture_layers.push(vec![255u8; ATLAS_LAYER_BYTES]);
     sprite_to_layer.insert("horizon:ui/white".to_string(), white_layer);
 
+    let models_bundle_path = root.join("assets/models_bundle.json");
+    let models_bundle: Option<BTreeMap<String, String>> = if models_bundle_path.is_file() {
+        let text = fs::read_to_string(&models_bundle_path)
+            .map_err(|e| format!("read {}: {e}", models_bundle_path.display()))?;
+        Some(serde_json::from_str(&text).map_err(|e| format!("parse models_bundle: {e}"))?)
+    } else {
+        None
+    };
+
     let mut models_map = BTreeMap::new();
     for model_rel in &manifest.models {
-        let model_path = root.join(format!("assets/minecraft/models/{model_rel}.json"));
-        let model_text = fs::read_to_string(&model_path)
-            .map_err(|e| format!("read {}: {e}", model_path.display()))?;
+        let model_text = if let Some(ref bundle) = models_bundle {
+            bundle
+                .get(model_rel)
+                .cloned()
+                .ok_or_else(|| format!("missing {model_rel} in models_bundle.json"))?
+        } else {
+            let model_path = root.join(format!("assets/minecraft/models/{model_rel}.json"));
+            fs::read_to_string(&model_path)
+                .map_err(|e| format!("read {}: {e}", model_path.display()))?
+        };
         let cuboid = CuboidModel::from_json(&model_text)
             .map_err(|e| format!("CuboidModel::from_json({model_rel}): {e}"))?;
         models_map.insert(format!("minecraft:{model_rel}"), cuboid);
@@ -1148,7 +1220,17 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
     let model_lib = ModelLibrary::new(models_map).map_err(|e| format!("ModelLibrary::new: {e}"))?;
 
     #[cfg(feature = "vanilla-visuals")]
-    let (state_quads, defaults) = state_models::bake(root, &model_lib)?;
+    let (state_quads, defaults, state_catalog) =
+        state_models::bake(root, &model_lib, &sprite_to_layer, &texture_layers)?;
+    let bs_bundle_path = root.join("assets/blockstates_bundle.json");
+    let bs_bundle: Option<BTreeMap<String, String>> = if bs_bundle_path.is_file() {
+        let text = fs::read_to_string(&bs_bundle_path)
+            .map_err(|e| format!("read {}: {e}", bs_bundle_path.display()))?;
+        Some(serde_json::from_str(&text).map_err(|e| format!("parse blockstates_bundle: {e}"))?)
+    } else {
+        None
+    };
+
     let mut baked_quads = BTreeMap::new();
     #[cfg(feature = "first-person-polish")]
     let mut hand_models = BTreeMap::new();
@@ -1165,9 +1247,16 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
             hand_models.insert(block, Mat4::IDENTITY);
             continue;
         }
-        let bs_path = root.join(format!("assets/minecraft/blockstates/{name}.json"));
-        let bs_text =
-            fs::read_to_string(&bs_path).map_err(|e| format!("read {}: {e}", bs_path.display()))?;
+        let bs_text = if let Some(ref bundle) = bs_bundle {
+            bundle
+                .get(name)
+                .cloned()
+                .ok_or_else(|| format!("missing {name} in blockstates_bundle.json"))?
+        } else {
+            let bs_path = root.join(format!("assets/minecraft/blockstates/{name}.json"));
+            fs::read_to_string(&bs_path)
+                .map_err(|e| format!("read {}: {e}", bs_path.display()))?
+        };
         let def = BlockStateDefinition::from_json(&bs_text)
             .map_err(|e| format!("BlockStateDefinition({name}): {e}"))?;
 
@@ -1291,6 +1380,8 @@ fn bake_assets(root_str: String) -> Result<BakedAssetRegistry, String> {
         bucket_layer,
         #[cfg(feature = "vanilla-visuals")]
         state_quads,
+        #[cfg(feature = "vanilla-visuals")]
+        state_catalog,
         #[cfg(feature = "vanilla-visuals")]
         bubble,
         #[cfg(feature = "vanilla-visuals")]
@@ -1481,7 +1572,15 @@ impl HorizonClientWorld {
         if !self.chunks[&(cx, cz)]
             .terrain
             .section(section as usize)
-            .is_some_and(|blocks| blocks.any_state(|id| self.vanilla.visual(id) != VoxelBlock::Air))
+            .is_some_and(|blocks| {
+                blocks.any_state(|id| {
+                    #[cfg(feature = "vanilla-visuals")]
+                    if assets.state_catalog.has_state(id) {
+                        return assets.state_catalog.is_visible(id);
+                    }
+                    self.vanilla.visual(id) != VoxelBlock::Air
+                })
+            })
         {
             return mesh;
         }
@@ -1493,7 +1592,13 @@ impl HorizonClientWorld {
                 }
                 self.chunks.get(&key).is_none_or(|col| {
                     col.terrain.section(sy as usize).is_some_and(|blocks| {
-                        !blocks.any_state(|id| !self.vanilla.visual(id).is_opaque())
+                        !blocks.any_state(|id| {
+                            #[cfg(feature = "vanilla-visuals")]
+                            if assets.state_catalog.has_state(id) {
+                                return !assets.state_catalog.is_opaque_full_cube(id);
+                            }
+                            !self.vanilla.visual(id).is_opaque()
+                        })
                     })
                 })
             };
@@ -1532,6 +1637,79 @@ impl HorizonClientWorld {
                             continue;
                         }
                     }
+                    let origin = [x as f32, y as f32, z as f32];
+                    #[cfg(feature = "vanilla-visuals")]
+                    if assets.state_catalog.has_state(id) {
+                        let meta = assets.state_catalog.meta(id);
+                        assets.state_catalog.for_each_quad(id, pos, |bq| {
+                            let quad = &bq.quad;
+                            if let Some(cull_dir) = quad.cull {
+                                let (nx, ny, nz) = match cull_dir {
+                                    AssetDirection::Down => (x, y - 1, z),
+                                    AssetDirection::Up => (x, y + 1, z),
+                                    AssetDirection::North => (x, y, z - 1),
+                                    AssetDirection::South => (x, y, z + 1),
+                                    AssetDirection::West => (x - 1, y, z),
+                                    AssetDirection::East => (x + 1, y, z),
+                                };
+                                if ny < MIN_Y || !self.chunks.contains_key(&(nx >> 4, nz >> 4)) {
+                                    return;
+                                }
+                                let neighbor_pos = BlockPos::new(nx, ny, nz);
+                                if let Some(neighbor_id) = self.state_at(neighbor_pos) {
+                                    if assets.state_catalog.has_state(neighbor_id) {
+                                        if assets.state_catalog.should_cull_face(id, neighbor_id) {
+                                            return;
+                                        }
+                                    } else if block
+                                        .should_cull_against(self.get_block(neighbor_pos))
+                                    {
+                                        return;
+                                    }
+                                }
+                            }
+                            let normal = match quad.facing {
+                                AssetDirection::Down => [0.0, -1.0, 0.0],
+                                AssetDirection::Up => [0.0, 1.0, 0.0],
+                                AssetDirection::North => [0.0, 0.0, -1.0],
+                                AssetDirection::South => [0.0, 0.0, 1.0],
+                                AssetDirection::West => [-1.0, 0.0, 0.0],
+                                AssetDirection::East => [1.0, 0.0, 0.0],
+                            };
+                            let face_shade = if !quad.shade {
+                                1.0
+                            } else if block == VoxelBlock::SeaLantern {
+                                1.15
+                            } else {
+                                match quad.facing {
+                                    AssetDirection::Up => 1.00,
+                                    AssetDirection::Down => 0.5,
+                                    AssetDirection::North | AssetDirection::South => 0.8,
+                                    AssetDirection::West | AssetDirection::East => 0.6,
+                                }
+                            };
+                            let tint = visuals::tint_state(self, pos, meta.tint, quad.tint_index);
+                            let face_shade = visuals::light(self, id, face_shade);
+                            let vertices = if bq.pass == state_models::QuadPass::Translucent {
+                                &mut translucent
+                            } else {
+                                &mut mesh.vertices
+                            };
+                            let color_ao = [tint[0], tint[1], tint[2], face_shade];
+                            let layer = bq.layer as f32;
+                            for &vi in &[0usize, 1, 2, 0, 2, 3] {
+                                let p = quad.positions[vi];
+                                let uv = quad.uv[vi];
+                                vertices.push(TerrainVertex {
+                                    pos: [origin[0] + p[0], origin[1] + p[1], origin[2] + p[2]],
+                                    normal,
+                                    uv_layer: [uv[0], uv[1], layer],
+                                    color_ao,
+                                });
+                            }
+                        });
+                        continue;
+                    }
                     if block == VoxelBlock::Air {
                         continue;
                     }
@@ -1545,7 +1723,6 @@ impl HorizonClientWorld {
                     let Some(quads) = quads else {
                         continue;
                     };
-                    let origin = [x as f32, y as f32, z as f32];
 
                     for quad in quads {
                         if let Some(cull_dir) = quad.cull {
@@ -2926,6 +3103,8 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         "INIT asset_bake_ms={}",
         assets_start.elapsed().as_millis()
     ));
+    #[cfg(feature = "vanilla-visuals")]
+    log_line(&assets.state_catalog.coverage_log_line());
     log_line(&format!(
         "PASS Horizon 26.3 assets loaded and baked via horizon-assets: source='{}' blocks={} textures={} animations={} total_quads={}",
         assets.source_label,
@@ -4022,20 +4201,23 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
                 {
                     let state = guard.vanilla.generator.data().registry().state(id).unwrap();
                     let visual = guard.get_block(hit.block);
-                    let quads = assets
+                    let mut materials = Vec::new();
+                    if assets.state_catalog.has_state(id) {
+                        assets.state_catalog.for_each_quad(id, hit.block, |bq| {
+                            materials.push((bq.quad.material.sprite.clone(), Some(bq.layer)));
+                        });
+                    } else if let Some(quads) = assets
                         .state_quads
                         .get(&id.0)
-                        .or_else(|| assets.baked_quads.get(&visual));
-                    let materials: Vec<_> = quads
-                        .into_iter()
-                        .flatten()
-                        .map(|quad| {
-                            (
-                                &quad.material.sprite,
-                                assets.sprite_to_layer.get(&quad.material.sprite),
-                            )
-                        })
-                        .collect();
+                        .or_else(|| assets.baked_quads.get(&visual))
+                    {
+                        for quad in quads {
+                            materials.push((
+                                quad.material.sprite.clone(),
+                                assets.sprite_to_layer.get(&quad.material.sprite).copied(),
+                            ));
+                        }
+                    }
                     log_line(&format!(
                         "BLOCK_MODEL pos={:?} state={} name={} properties={:?} visual={visual:?} materials={materials:?}",
                         hit.block, id.0, state.name, state.properties

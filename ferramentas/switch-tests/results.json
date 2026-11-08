@@ -359,6 +359,21 @@
       "runtime_log": "sdmc:/switch/horizon-tests/test10b_woodland_models.log",
       "hardware_log": "test10b_woodland_models.log",
       "confirmation": "4574 frames (~59.48 FPS), 7 intervals over 33 ms, max interval 38995 us, first frame 62666 ms, 180 SDK ABI assertions, PLATFORM_STORAGE available_bytes=26329186304, FEATURES unsupported=0 failed=0, two placements, RESULT=0, RETURN 0. Woodland visual confirmation and hardware particle emission (EFFECTS emitted=0) remain pending; MODEL_FALLBACK listed remaining full-block Stone fallbacks."
+    },
+    {
+      "test": "test11_vanilla_model_catalog",
+      "build": "passed",
+      "link": "passed",
+      "hardware": "pending_user_validation",
+      "file": "ferramentas/switch-tests/out/test11_vanilla_model_catalog.nro",
+      "bytes": 61974429,
+      "sha256": "34b76d6a587bd2b31874237208ad0149f9dc03df5be1eef60e6de8dab81700c5",
+      "elf": "ferramentas/switch-tests/out/test11_vanilla_model_catalog.elf",
+      "elf_sha256": "5d22d627de412cf049f6c55ea7dbb437970a2de74b708ff16978ce830f174efe",
+      "build_log": "ferramentas/switch-tests/out/test11_vanilla_model_catalog.build.log",
+      "offline_log": "ferramentas/switch-tests/out/test11_vanilla_model_catalog.offline.log",
+      "test_log": "ferramentas/switch-tests/out/test11.gles.log",
+      "runtime_log": "sdmc:/switch/horizon-tests/test11_vanilla_model_catalog.log"
     }
   ]
 }

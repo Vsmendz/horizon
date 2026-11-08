@@ -113,18 +113,34 @@ def main() -> int:
     if manifest_sha1 not in accepted_manifests:
         raise SystemExit(f"26.3.json SHA-1 mismatch: got {manifest_sha1}")
 
-    visuals = sys.argv[1:] == ["--vanilla-visuals"]
+    all_models = sys.argv[1:] == ["--vanilla-all-models"]
+    visuals = all_models or sys.argv[1:] == ["--vanilla-visuals"]
     water = visuals or sys.argv[1:] == ["--vanilla-water"]
     vanilla = water or sys.argv[1:] == ["--vanilla"]
     if sys.argv[1:] and not vanilla:
-        raise SystemExit("Usage: prepare_switch_assets.py [--vanilla|--vanilla-water|--vanilla-visuals]")
+        raise SystemExit(
+            "Usage: prepare_switch_assets.py [--vanilla|--vanilla-water|--vanilla-visuals|--vanilla-all-models]"
+        )
     blocks = BLOCKS + VANILLA_BLOCKS if vanilla else BLOCKS
     if visuals:
         blocks += VISUAL_BLOCKS
-    out_root = (script_dir / "out" / ("test10-romfs" if visuals else "test8f-romfs" if water else "test8-romfs") if vanilla
-                else script_dir / "out" / "sdcard" / "switch" / "horizon")
+    out_root = (
+        script_dir
+        / "out"
+        / (
+            "test11-romfs"
+            if all_models
+            else "test10-romfs"
+            if visuals
+            else "test8f-romfs"
+            if water
+            else "test8-romfs"
+        )
+        if vanilla
+        else script_dir / "out" / "sdcard" / "switch" / "horizon"
+    )
     assets_root = out_root / "assets"
-    if assets_root.exists() and not vanilla:
+    if assets_root.exists() and (not vanilla or all_models):
         shutil.rmtree(assets_root)
     assets_root.mkdir(parents=True, exist_ok=True)
 
@@ -143,11 +159,21 @@ def main() -> int:
 
     with zipfile.ZipFile(jar_path, "r") as zf:
         jar_names = set(zf.namelist())
+        if all_models:
+            prefix = "assets/minecraft/blockstates/"
+            blocks = sorted(
+                n[len(prefix) : -5]
+                for n in jar_names
+                if n.startswith(prefix) and n.endswith(".json")
+            )
 
-        def extract_entry(entry_path: str) -> bytes:
+        def read_entry(entry_path: str) -> bytes:
             if entry_path not in jar_names:
                 raise FileNotFoundError(f"Missing entry in 26.3.jar: {entry_path}")
-            data = zf.read(entry_path)
+            return zf.read(entry_path)
+
+        def extract_entry(entry_path: str) -> bytes:
+            data = read_entry(entry_path)
             dst = out_root / entry_path
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_bytes(data)
@@ -155,14 +181,21 @@ def main() -> int:
             return data
 
         if visuals:
-            for name in ("grass", "foliage"):
+            colormaps = ("grass", "foliage", "dry_foliage") if all_models else ("grass", "foliage")
+            for name in colormaps:
                 extract_entry(f"assets/minecraft/textures/colormap/{name}.png")
+
+        blockstates_bundle: dict[str, str] = {}
+        models_bundle: dict[str, str] = {}
 
         # 1. Extract blockstates and collect referenced models
         for block in blocks:
             bs_entry = f"assets/minecraft/blockstates/{block}.json"
-            raw = extract_entry(bs_entry)
-            bs_json = json.loads(raw.decode("utf-8"))
+            raw = read_entry(bs_entry) if all_models else extract_entry(bs_entry)
+            bs_text = raw.decode("utf-8")
+            if all_models:
+                blockstates_bundle[block] = bs_text
+            bs_json = json.loads(bs_text)
 
             def collect_models_from_variant(v):
                 if isinstance(v, list):
@@ -188,8 +221,11 @@ def main() -> int:
             visited_models.add(model_id)
 
             model_entry = f"assets/minecraft/models/{model_id}.json"
-            raw = extract_entry(model_entry)
-            model_json = json.loads(raw.decode("utf-8"))
+            raw = read_entry(model_entry) if all_models else extract_entry(model_entry)
+            model_text = raw.decode("utf-8")
+            if all_models:
+                models_bundle[model_id] = model_text
+            model_json = json.loads(model_text)
 
             if parent := model_json.get("parent"):
                 parent_id = strip_ns(parent)
@@ -200,15 +236,43 @@ def main() -> int:
                 if isinstance(tex_val, dict):
                     tex_val = tex_val.get("sprite")
                 if isinstance(tex_val, str) and not tex_val.startswith("#"):
-                    textures_set.add(strip_ns(tex_val))
+                    tex_id = strip_ns(tex_val)
+                    if tex_id != "missingno":
+                        textures_set.add(tex_id)
 
         # 3. Extract PNG textures and optional .png.mcmeta files
+        textures_blob = bytearray()
         for tex_id in sorted(textures_set):
             png_entry = f"assets/minecraft/textures/{tex_id}.png"
-            extract_entry(png_entry)
+            png_bytes = read_entry(png_entry) if all_models else extract_entry(png_entry)
             mcmeta_entry = f"{png_entry}.mcmeta"
+            mcmeta_bytes = b""
             if mcmeta_entry in jar_names:
-                extract_entry(mcmeta_entry)
+                mcmeta_bytes = (
+                    read_entry(mcmeta_entry) if all_models else extract_entry(mcmeta_entry)
+                )
+            if all_models:
+                textures_blob.extend(len(png_bytes).to_bytes(4, "little"))
+                textures_blob.extend(png_bytes)
+                textures_blob.extend(len(mcmeta_bytes).to_bytes(4, "little"))
+                textures_blob.extend(mcmeta_bytes)
+
+        if all_models:
+            bs_bundle_rel = "assets/blockstates_bundle.json"
+            (out_root / bs_bundle_rel).write_text(
+                json.dumps(blockstates_bundle, separators=(",", ":")), encoding="utf-8"
+            )
+            extracted_files.append(bs_bundle_rel)
+
+            models_bundle_rel = "assets/models_bundle.json"
+            (out_root / models_bundle_rel).write_text(
+                json.dumps(models_bundle, separators=(",", ":")), encoding="utf-8"
+            )
+            extracted_files.append(models_bundle_rel)
+
+            tex_bundle_rel = "assets/textures_bundle.bin"
+            (out_root / tex_bundle_rel).write_bytes(bytes(textures_blob))
+            extracted_files.append(tex_bundle_rel)
 
     manifest_info = {
         "version": "26.3",

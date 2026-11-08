@@ -106,20 +106,52 @@ impl Effects {
         if block == VoxelBlock::Air || block == VoxelBlock::Water {
             return;
         }
-        let Some(quads) = assets.baked_quads.get(&block) else {
-            return;
-        };
-        let Some(model) = quads
-            .iter()
-            .find(|q| normal(q.facing) == face.normal())
-            .or_else(|| quads.first())
-        else {
-            return;
-        };
-        let Some(&layer) = assets.sprite_to_layer.get(&model.material.sprite) else {
-            return;
-        };
-        let tint = visuals::tint(world, pos, block, model.tint_index);
+        let mut catalog_quads = Vec::new();
+        let mut catalog_tint_kind = None;
+        if let Some(id) = world.state_at(pos)
+            && assets.state_catalog.has_state(id)
+        {
+            catalog_tint_kind = Some(assets.state_catalog.meta(id).tint);
+            assets
+                .state_catalog
+                .for_each_quad(id, pos, |bq| catalog_quads.push(bq.clone()));
+        }
+        let (layer, tint, positions_iter): (u32, [f32; 3], Vec<[f32; 3]>) =
+            if !catalog_quads.is_empty() {
+                let chosen = catalog_quads
+                    .iter()
+                    .find(|bq| normal(bq.quad.facing) == face.normal())
+                    .or_else(|| catalog_quads.first())
+                    .unwrap();
+                let tint = visuals::tint_state(
+                    world,
+                    pos,
+                    catalog_tint_kind.unwrap_or(crate::state_models::TintKind::None),
+                    chosen.quad.tint_index,
+                );
+                let pts = catalog_quads
+                    .iter()
+                    .flat_map(|bq| bq.quad.positions)
+                    .collect();
+                (chosen.layer, tint, pts)
+            } else {
+                let Some(quads) = assets.baked_quads.get(&block) else {
+                    return;
+                };
+                let Some(model) = quads
+                    .iter()
+                    .find(|q| normal(q.facing) == face.normal())
+                    .or_else(|| quads.first())
+                else {
+                    return;
+                };
+                let Some(&layer) = assets.sprite_to_layer.get(&model.material.sprite) else {
+                    return;
+                };
+                let tint = visuals::tint(world, pos, block, model.tint_index);
+                let pts = quads.iter().flat_map(|q| q.positions).collect();
+                (layer, tint, pts)
+            };
         let bounds = world.collision_shape(pos).boxes();
         let coords = |a: &horizon_core::geometry::Aabb| {
             [
@@ -135,7 +167,7 @@ impl Effects {
         if boxes.is_empty() {
             // The prepared model has geometry even for plants with no collision.
             let mut bounds = [1.0f64, 1.0, 1.0, 0.0, 0.0, 0.0];
-            for p in quads.iter().flat_map(|q| q.positions) {
+            for p in positions_iter {
                 for i in 0..3 {
                     bounds[i] = bounds[i].min(f64::from(p[i]));
                     bounds[i + 3] = bounds[i + 3].max(f64::from(p[i]));
@@ -272,17 +304,32 @@ impl Mining {
     }
 
     pub fn vertices(&self, assets: &BakedAssetRegistry, out: &mut Vec<TerrainVertex>) {
-        let Some((pos, _, _)) = self.target else {
+        let Some((pos, state_id, _)) = self.target else {
             return;
         };
         if self.progress <= 0.0 || self.progress >= 1.0 {
             return;
         }
+        let layer = assets.cracks[(self.progress * 10.0) as usize] as f32;
+        let origin = Vec3::new(pos.x as f32, pos.y as f32, pos.z as f32);
+        if assets.state_catalog.has_state(state_id) {
+            assets.state_catalog.for_each_quad(state_id, pos, |bq| {
+                let quad = &bq.quad;
+                let n = Vec3::from_array(normal(quad.facing).map(|x| x as f32));
+                for i in [0, 1, 2, 0, 2, 3] {
+                    out.push(TerrainVertex {
+                        pos: (origin + Vec3::from_array(quad.positions[i]) + n * 0.001).to_array(),
+                        normal: n.to_array(),
+                        uv_layer: [quad.uv[i][0], quad.uv[i][1], layer],
+                        color_ao: [1.0, 1.0, 1.0, 0.7],
+                    });
+                }
+            });
+            return;
+        }
         let Some(quads) = self.block.and_then(|block| assets.baked_quads.get(&block)) else {
             return;
         };
-        let layer = assets.cracks[(self.progress * 10.0) as usize] as f32;
-        let origin = Vec3::new(pos.x as f32, pos.y as f32, pos.z as f32);
         for quad in quads {
             let n = Vec3::from_array(normal(quad.facing).map(|x| x as f32));
             for i in [0, 1, 2, 0, 2, 3] {

@@ -638,3 +638,34 @@ ferramentas/devkitpro/tools/bin/nxlink -a <SWITCH_IP> ferramentas/switch-tests/o
 
 On Switch, compare standing, walking, sprinting, crouching, jumping and landing. Change hotbar slots, break and place blocks next to a wall, and check the framing and animation of the held block. Compare water from the shore and underwater, ascend with B, and check that fog fades when the eyes leave the water. Cross a chunk boundary, save with X, exit with PLUS and reopen to verify pose and chunk persistence. Copy `sdmc:/switch/horizon-tests/test9_vanilla_first_person_polish.log` to the project.
 
+## Test 10 & Test 10B — Vanilla decoration, visual effects, woodland models and platform storage
+
+- Test 10 (`out/test10_vanilla_world_visuals.nro`, SHA-256 `83ba0e8e2e920fac39ab71b0f388b756be74423dd7615c9067d9cbecce810643`) executed on physical Switch (`test10_vanilla_world_visuals.log`): 5,640 frames, first frame 55,033 ms, 23 breaks, 10 placements, two saved columns, `RESULT=0`, `RETURN 0`. The owner reported a visual defect on some woodland trees.
+- Test 10B (`out/test10b_woodland_models.nro`, SHA-256 `237eb76dd56fbadba03858918702708e63db4bf1bde1955f2b8c277858604bb1`) added explicit state binding for the 9 log/wood blocks and 3 huge mushroom blocks, sequential asset bundles, and `horizon_platform::available_space("sdmc:/")` backed by a compile-time-verified `struct statvfs` ABI bridge (180 SDK assertions). Physical Switch execution (`test10b_woodland_models.log`) recorded 4,574 frames (~59.48 FPS), 7 intervals above 33 ms, max interval 38.995 ms, first frame 62,666 ms, `PLATFORM_STORAGE available_bytes=26329186304`, `FEATURES unsupported=0 failed=0`, two placements, `RESULT=0`, and `RETURN 0`.
+- Inspection of `MODEL_FALLBACK stone_names={...}` in `test10b_woodland_models.log` identified why woodland trees still showed stone blocks: Minecraft 26.3 woodland features generate **Poplar trees** (`poplar_log`, `orange_poplar_leaves`, `red_poplar_leaves`, `yellow_poplar_leaves`), **Pale Oak trees** (`pale_oak_log`, `pale_oak_leaves`), **Azalea leaves** (`azalea_leaves`, `flowering_azalea_leaves`), and **Bee Nests** (`bee_nest`), which were absent from the manual 68-entry `VoxelBlock` whitelist and fell back to `VoxelBlock::Stone`. Non-full-cube blocks outside the 68-entry list fell back to `VoxelBlock::Air` and were omitted from meshing.
+
+## Test 11 — Complete 35,723-state vanilla model catalog (`test11_vanilla_model_catalog`)
+
+- **Complete `BlockStateId` model coverage**: `StateModelCatalog::bake` in `horizon-client-switch/src/state_models.rs` binds all 1,286 registered blocks in `facts.json` across all **35,723 `BlockStateId`s** (`missing_states=0`, `stone_fallbacks=0`) using `BlockStateDefinition`, `CompiledChoices`, `ModelLibrary`, and `bake_block_model`.
+  - **35,115 model states** (1,192 blocks) bake directly from JSON cuboid element models (including Poplar logs/leaves, Pale Oak logs/leaves, Azalea leaves, Bee Nests, stairs, slabs, fences, walls, doors, trapdoors, torches, lanterns, amethyst clusters, pointed dripstone, crafting tables, bookshelves, ores, terracotta, copper variants, etc.) deduplicated into **7,883 unique `(model, rotations, uv_lock)` variants** and **80,079 baked quads**.
+  - **460 entity-proxy states** (86 block-entity-only blocks such as chests, shulker boxes, heads/skulls, banners, beds, signs, conduits, decorated pots) synthesize bounded proxy boxes from their `"particle"` sprite so they remain visible in terrain meshes.
+  - **34 fluid states** (`water`, `bubble_column` via `fluid_geometry::emit_water`, and `lava` via animated `lava_still`).
+  - **114 invisible states** (`air`, `cave_air`, `void_air`, `barrier`, `light`, `structure_void`, `moving_piston`).
+- **Per-state rendering metadata & meshing**:
+  - `StateModelMeta` pre-computes `render_kind`, `is_opaque_full_cube` (all 6 boundary faces covered by opaque `[0..16]×[0..16]` quads), `cull_same_state` (leaves, glass, ice, slime, honey), `has_weighted_random` (deterministic `position_seed(BlockPos)` selection), and `tint: TintKind` (`BiomeGrass`, `BiomeFoliage`, `BiomeDryFoliage`, `BiomeWater`, and fixed tints for birch, spruce, lily pad, stems, and redstone wire).
+  - `classify_baked_quad` separates `QuadPass::Opaque`, `QuadPass::Cutout` (alpha-tested in the main terrain pass with depth writes), and `QuadPass::Translucent` (alpha-blended in the water pass for stained glass, ice, slime, honey, portals, and `force_translucent` quads).
+  - `Effects::block` and `Mining::vertices` resolve particle UVs, tints, and crack overlays directly from `StateModelCatalog` for every `BlockStateId`.
+- **Compact RomFS asset bundle (`out/test11-romfs`)**: `prepare_switch_assets.py --vanilla-all-models` extracts all 1,288 blockstates, 2,794 transitive models, and 1,308 transitive textures directly from `26.3.jar` into `assets/blockstates_bundle.json`, `assets/models_bundle.json`, `assets/textures_bundle.bin`, the 3 biome colormaps, and `assets/manifest.json` (6 files, 3,337,450 bytes / 3.18 MiB total; 1,550 total RomFS files).
+- **Offline validation**:
+  - Host GLES + vanilla suite (`out/test11.gles.log`): 36 passed, 0 failed, 2 ignored, including `full_vanilla_model_catalog_covers_all_35723_states_with_zero_stone_fallbacks`.
+  - Host legacy streaming suite (`out/test11.legacy.log`): 14 passed, 0 failed, 1 ignored.
+  - Static AArch64 ELF, NRO0/ASET, and RomFS verification (`out/test11_vanilla_model_catalog.offline.log`): passed with 0 undefined symbols, 0 dynamic dependencies, all 1,550 RomFS files matching staging, and all 22 prior NRO hashes preserved.
+  - Artifact: `ferramentas/switch-tests/out/test11_vanilla_model_catalog.nro` (`61,974,429` bytes, SHA-256 `34b76d6a587bd2b31874237208ad0149f9dc03df5be1eef60e6de8dab81700c5`, ELF SHA-256 `5d22d627de412cf049f6c55ea7dbb437970a2de74b708ff16978ce830f174efe`).
+
+```sh
+source ferramentas/env.sh
+CARGO_NET_OFFLINE=true python3 ferramentas/switch-tests/build.py test11_vanilla_model_catalog
+ferramentas/devkitpro/tools/bin/nxlink -a <SWITCH_IP> ferramentas/switch-tests/out/test11_vanilla_model_catalog.nro
+```
+
+

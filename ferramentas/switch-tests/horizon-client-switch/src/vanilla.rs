@@ -98,6 +98,7 @@ impl Vanilla {
             return Err(invalid("unexpected 26.3 overworld height"));
         }
         let spawn = generator.spawn_position().map_err(io::Error::other)?;
+        let has_full_catalog = root.join("assets/blockstates_bundle.json").is_file();
         let visuals: Box<[VoxelBlock]> = (0..registry.len())
             .map(|i| {
                 let id = BlockStateId(i as u32);
@@ -106,10 +107,40 @@ impl Vanilla {
                     return VoxelBlock::Air;
                 }
                 let name = &registry.state(id).expect("registered state").name;
+                let short = name.strip_prefix("minecraft:").unwrap_or(name);
+                if matches!(
+                    short,
+                    "air"
+                        | "cave_air"
+                        | "void_air"
+                        | "barrier"
+                        | "light"
+                        | "structure_void"
+                        | "moving_piston"
+                ) {
+                    return VoxelBlock::Air;
+                }
+                if short == "bubble_column" {
+                    return VoxelBlock::Water;
+                }
                 let visual = VoxelBlock::from_nbt_name(name);
                 if visual == VoxelBlock::Air {
                     #[cfg(feature = "vanilla-visuals")]
-                    if decorated
+                    if has_full_catalog {
+                        if short.ends_with("_leaves") {
+                            return VoxelBlock::OakLeaves;
+                        }
+                        if short.ends_with("_stained_glass")
+                            || short.ends_with("_stained_glass_pane")
+                            || short == "tinted_glass"
+                            || short == "glass_pane"
+                        {
+                            return VoxelBlock::Glass;
+                        }
+                        if short == "frosted_ice" {
+                            return VoxelBlock::Ice;
+                        }
+                    } else if decorated
                         && data
                             .cached_collision_shape(id)
                             .is_some_and(|shape| !shape.is_block())
@@ -123,7 +154,7 @@ impl Vanilla {
             })
             .collect();
         #[cfg(feature = "vanilla-visuals")]
-        if decorated {
+        if decorated && !has_full_catalog {
             let mut missing = std::collections::BTreeSet::new();
             for (i, visual) in visuals.iter().enumerate() {
                 let state = registry.state(BlockStateId(i as u32)).unwrap();
