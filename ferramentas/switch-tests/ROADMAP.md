@@ -12,7 +12,8 @@
 | Vanilla terrain in the playable client | Hardware confirmed | Test 8E confirmed textured terrain, the hotbar, asynchronous streaming, edits and clean shutdown |
 | Vanilla water geometry and transparency | Executed on hardware | Test 8F exited cleanly. Confirm the shoreline and water appearance outside the submerged region |
 | Vanilla first-person polish | Hardware confirmed | Test 9 verified water and first-person animation. Held water was oversized |
-| Vanilla decoration and visual effects | Awaiting hardware validation | Test 10 uses a new world and keeps the Test 9 save separate |
+| Vanilla decoration and visual effects | Executed on hardware | Test 10 rendered decorated streaming, particles and bucket model (first frame 55.033 s, 5,640 frames); owner reported a visual defect on some woodland trees |
+| Woodland state models and platform storage | Executed on hardware | Test 10B (`test10b_woodland_models.log`): 4,574 frames (~59.48 FPS), max interval 38.995 ms, 180 ABI assertions, `PLATFORM_STORAGE available_bytes=26329186304`, `FEATURES unsupported=0 failed=0`, `RESULT=0`. Visual tree appearance pending; `MODEL_FALLBACK` identified remaining full-block `Stone` fallbacks |
 | Singleplayer mechanics and essential interfaces | Pending | Extend the validated world and connect the original player, inventory, crafting and menu systems |
 | Entities, audio and performance tuning | Pending | Establish resource budgets from hardware measurements |
 

@@ -1320,7 +1320,6 @@ dependencies = [
  "chrono",
  "dunce",
  "flate2",
- "fs4",
  "gilrs",
  "glam",
  "horizon-anticheat",
@@ -1342,6 +1341,7 @@ dependencies = [
  "horizon-mods",
  "horizon-narrator",
  "horizon-optifine",
+ "horizon-platform",
  "horizon-protocol",
  "horizon-server-files",
  "horizon-shader-api",
@@ -1400,7 +1400,6 @@ dependencies = [
  "bytemuck",
  "chrono",
  "flate2",
- "fs4",
  "getrandom 0.3.4",
  "gilrs",
  "glam",
@@ -1421,6 +1420,7 @@ dependencies = [
  "horizon-mods",
  "horizon-narrator",
  "horizon-optifine",
+ "horizon-platform",
  "horizon-protocol",
  "horizon-server-files",
  "horizon-shader-api",
@@ -1642,6 +1642,14 @@ dependencies = [
  "horizon-core",
  "log",
  "regex",
+]
+
+[[package]]
+name = "horizon-platform"
+version = "0.1.0"
+dependencies = [
+ "fs4",
+ "libc",
 ]
 
 [[package]]

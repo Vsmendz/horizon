@@ -5,6 +5,35 @@ Hardware confirmations were supplied by the user in this chat after each nxlink 
 No screenshot, captured framebuffer, or runtime network trace was obtained.
 See results.json for artifact sizes, SHA-256 digests and individual confirmations.
 
+## Test 10B woodland state models and platform storage isolation
+
+The Test 10 hardware run (`test10_vanilla_world_visuals.log`) confirmed decorated streaming, 5,640 frames (58.57 FPS across 96.296 s), 46 intervals above 33 ms, a maximum interval of 108.660 ms, a first frame at 55.033 s (down from 63.860 s in Test 9 after skipping structure tables), 2,011 emitted particles (peak 138), 23 block breaks, 10 placements, two saved columns, `RESULT=0` and `RETURN 0`. The owner reported a visual defect on some woodland trees near spawn.
+
+In the Dark Forest around spawn (`FEATURE_STATES` shows 455 `dark_oak_log`, 1,246 `dark_oak_leaves`, 45 `brown_mushroom_block`, 148 `red_mushroom_block` and 25 `mushroom_stem`), giant mushroom blocks were absent from `VISUAL_BLOCKS` and fell back to `VoxelBlock::Stone` because their collision shape is a full cube. In addition, log axes (`axis=x`/`z`) and multipart mushroom faces (`up/down/north/south/east/west` selecting outer cap versus `mushroom_block_inside` pores) previously used a single variant per `VoxelBlock` rather than per `BlockStateId`.
+
+`test10b_woodland_models` adds `brown_mushroom_block`, `red_mushroom_block` and `mushroom_stem` to `prepare_switch_assets.py` and `VoxelBlock`, and introduces `state_models.rs` to bind `BlockStateDefinition` and `CompiledChoices` across all registered states of `*_log`, `brown_mushroom_block`, `red_mushroom_block` and `mushroom_stem` (192+ state models). The RomFS bundle now packages 68 blockstates, 100 models and 104 textures (105 atlas layers including white, 1,843 RomFS entries). `vanilla.rs` also logs `MODEL_FALLBACK stone_names=...` at startup so any remaining full-block fallback states are visible in the SD log.
+
+On the full-client path:
+- Commit `2432d280a` isolated desktop `arboard` in `horizon-client-input` (`cfg(not(target_os = "horizon"))`) and direct `rustix` calls in `horizon-client`, `horizon-client-lib` and `horizon-client-render` (`cfg(all(unix, not(target_os = "horizon")))`).
+- `crates/horizon-platform` replaces `fs4` in `horizon-client` / `horizon-client-lib` (`save.rs` `estimate_disk_space`) with a `libc::statvfs` implementation on `target_os = "horizon"` (`fs4::available_space` elsewhere).
+- `runtime-audit/measure_abi.py` measured `fsblkcnt_t` (8 B), `fsfilcnt_t` (4 B) and `struct statvfs` (80 B, align 8, 11 field offsets) from devkitA64 C headers, expanding `abi.json` to 371 measurements and `abi_assertions.rs` from 163 to 180 compile-time SDK checks. `test10b_woodland_models` calls `horizon_platform::available_space(Path::new("sdmc:/"))` at startup and logs `PLATFORM_STORAGE available_bytes=...`.
+- In the isolated full-client check (`out/full-client-switch.remaining-deps.log`), `winit 0.30.13` is now the only remaining dependency pulling `rustix 1.1.5` into `horizon-client`.
+
+| Gate | Result |
+| --- | --- |
+| AArch64 Rust, static link and ELF | PASS OFFLINE. ELF64 AArch64, zero undefined symbols, no dynamic dependencies, 180 compile-time ABI assertions |
+| NRO and RomFS | PASS OFFLINE. Valid NRO0 and ASET ranges. All 1,843 RomFS entries matched staging and all 21 prior NRO digests matched (`out/test10b_woodland_models.offline.log`) |
+| Woodland state models & GLES host suite | PASS OFFLINE. 35 passed, two opt-in probes skipped (`out/test10b.gles.log`, `out/test10b.models.log`). Verified log axis end faces, mushroom cap vs inside pore faces, leaf sprites and 192+ state models |
+| Legacy streaming & `horizon-platform` | PASS OFFLINE. 14 passed, one ignored (`out/test10b.legacy.log`); 2 passed in `horizon-platform` (`out/platform.host.log`, `out/platform.clippy.log`) |
+| Physical hardware | EXECUTED ON HARDWARE (`test10b_woodland_models.log`, `out/test10b_woodland_models.nro`, 58,713,241 bytes, SHA-256 `237eb76dd56fbadba03858918702708e63db4bf1bde1955f2b8c277858604bb1`): 4,574 frames (~59.48 FPS), 7 intervals over 33 ms, max interval 38.995 ms, first frame 62.666 s, 180 SDK ABI checks, `PLATFORM_STORAGE available_bytes=26329186304`, `FEATURES unsupported=0 failed=0`, `RESULT=0`, `RETURN 0`. Visual appearance of woodland models and hardware particle emission (`EFFECTS emitted=0`) remain pending; `MODEL_FALLBACK` listed remaining full-block `Stone` fallbacks |
+
+```sh
+source ferramentas/env.sh
+CARGO_NET_OFFLINE=true python3 ferramentas/switch-tests/build.py test10b_woodland_models
+python3 ferramentas/switch-tests/verify_artifact.py test10b_woodland_models ferramentas/switch-tests/out/test10-romfs
+./ferramentas/devkitpro/tools/bin/nxlink -a 192.168.1.5 ferramentas/switch-tests/out/test10b_woodland_models.nro -s
+```
+
 ## Test 10 world decoration and visual effects
 
 The owner approved Test 9 on physical hardware. Its SD log records 33,252 frames, 59.66 FPS, 49 intervals over 33 ms, a maximum interval of 203.084 ms and a first frame at 63.860 s. It also records 19 breaks, 113 placements, one saved column, `RESULT=0` and `RETURN 0`. The previous held-water cube was oversized.

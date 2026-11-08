@@ -76,7 +76,7 @@ horizon-dualsense = { path = "../horizon-dualsense", optional = true }
 ureq = { version = "2", default-features = false, features = ["tls"] }
 unicode-bidi = "0.3.18"
 # `LevelStorageAccess.estimateDiskSpace`: usable disk space, without unsafe code on Windows.
-fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
+horizon-platform = { path = "../horizon-platform" }
 
 [target.'cfg(all(unix, not(target_os = "horizon")))'.dependencies]
 # The server thread's CPU time per tick (`HORIZON_SPIKES`, spans.rs).

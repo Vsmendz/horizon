@@ -1,23 +1,24 @@
 # Current Switch runtime checkpoint
 
-## Test 10 continuation
+## Test 10B continuation
 
-The Test 9 hardware run is confirmed by the owner and by the local SD log. It presented 33,252 frames, averaged 59.66 FPS, had 49 frame intervals above 33 ms, peaked at 203.084 ms, and presented its first frame at 63.860 s. Water and the first-person animations were visually approved. The held water cube was oversized. The local checkpoint branch `switch-test10-checkpoint` points to the pre-Test 10 commit `20e1d6085`.
+The Test 10 hardware run (`test10_vanilla_world_visuals.log`) is confirmed as executed on physical hardware: 5,640 frames (58.57 FPS), 46 frame intervals above 33 ms, maximum interval 108.660 ms, first frame at 55.033 s, 2,011 emitted particles (peak 138), 23 breaks, 10 placements, two saved columns, `RESULT=0` and `RETURN 0`. The owner reported a visual defect on some woodland trees near spawn.
 
-Test 10 built and linked for AArch64 and passed the offline gates at `50e59f4b4`. Use `out/test10_vanilla_world_visuals.nro`, SHA-256 `83ba0e8e2e920fac39ab71b0f388b756be74423dd7615c9067d9cbecce810643`. Hardware validation is pending. Its separate save is `sdmc:/switch/horizon/saves/switch_vanilla_test10/` and its log is `sdmc:/switch/horizon-tests/test10_vanilla_world_visuals.log`. All 20 earlier NRO digests match.
+`test10b_woodland_models` fixes the Dark Forest woodland models (`c3836a45d`): giant mushrooms (`brown_mushroom_block`, `red_mushroom_block`, `mushroom_stem`) were missing from `VISUAL_BLOCKS` and fell back to `VoxelBlock::Stone`, and rotated log axes plus multipart mushroom faces needed per-`BlockStateId` model baking (`state_models.rs`, 192+ state models). It also integrates `crates/horizon-platform` (`available_space` via `libc::statvfs` on `target_os = "horizon"`, verified by 17 new compile-time ABI assertions in `abi_assertions.rs` for 180 SDK checks total, logged via `PLATFORM_STORAGE available_bytes=...`). Together with `2432d280a` (`arboard` and direct `rustix` isolation), `winit 0.30.13` is now the only remaining transitive path pulling `rustix 1.1.5` into `horizon-client`.
 
-The full host suite passed 34 tests with two opt-in probes skipped. The legacy suite passed 14 with one ignored. The ELF/NRO audit found zero undefined symbols and verified all 1,831 RomFS files. Test 10 adds worker-side FEATURES, material particles, held-trigger mining, biome colors, cutouts and the water bucket model. Structures are disabled. The host run verified decorated state and NBT reconstruction. The Switch tile schedule still needs a Java oracle comparison and physical seam testing.
+Test 10B (`out/test10b_woodland_models.nro`, 58,713,241 bytes, SHA-256 `237eb76dd56fbadba03858918702708e63db4bf1bde1955f2b8c277858604bb1`, ELF SHA-256 `7ded60dc41cd45936b876f7b71079fc74b16d09cba4c2c363f53bd7cf133e223`) ran on physical Switch hardware (`test10b_woodland_models.log`, `user_confirmed_execution`): 4,574 frames (~59.48 FPS), 7 intervals over 33 ms, maximum interval 38,995 µs, first frame at 62,666 ms, 180 SDK ABI assertions passed, `PLATFORM_STORAGE available_bytes=26329186304`, `FEATURES unsupported=0 failed=0`, two block placements, `RESULT=0` and `RETURN 0`. Visual confirmation of the woodland models and hardware particle emission (`EFFECTS emitted=0` because no blocks were broken in this run) remain pending; `MODEL_FALLBACK stone_names={...}` exposed the remaining full-block `Stone` fallbacks across the 35,723 registry states. All 21 earlier NRO digests match (`out/test10b_woodland_models.offline.log`), and all 1,843 RomFS files match staging. The host suite passed 35 tests (`out/test10b.gles.log`), legacy streaming passed 14 (`out/test10b.legacy.log`), and `horizon-platform` passed host unit tests and clippy (`out/platform.host.log`, `out/platform.clippy.log`).
 
-Reproduce in WSL from the repository root.
+Reproduce in WSL from the repository root:
 
 ```sh
 source ferramentas/env.sh
-CARGO_NET_OFFLINE=true python3 ferramentas/switch-tests/build.py test10_vanilla_world_visuals
+CARGO_NET_OFFLINE=true python3 ferramentas/switch-tests/build.py test10b_woodland_models
+python3 ferramentas/switch-tests/verify_artifact.py test10b_woodland_models ferramentas/switch-tests/out/test10-romfs
 ```
 
-Test 10 stages only private local game resources in the ignored output directory. It needs the Test 7 worldgen bundle and the Java 26.3 gameplay facts. The report records how to export them. Structures, full light propagation and full-game integration remain separate work.
+Test 10B stages only private local game resources in the ignored output directory. It needs the Test 7 worldgen bundle and the Java 26.3 gameplay facts. The report records how to export them. Structures, full light propagation and full-game integration remain separate work.
 
-For the next session, use the matrix in `ROADMAP.md`. The integrated server still starts a desktop-owned `Game` that requires `UiResources` and `Audio`. Winit 0.30.13 has no libnx platform backend. Keep the working GLES input/render loop and isolate authoritative server initialization and ticks from desktop dependencies. The original item NBT and in-memory protocol pipe are the first integration points. The isolated full-client check got past lockfile and getrandom selection, then failed in rustix 1.1.5 because its generic Unix backend assumes different newlib types and symbols. The standalone horizon-protocol crate passed AArch64 cargo check in the scratch checkout with those dependency selections. The memory pipe passed a threaded handshake and reply test on Linux. The same harness linked as ELF64 AArch64 with zero undefined symbols using libnx randomGet. Its next gates are Switch execution and the authoritative server adapter. The scratch source and log locations are recorded in the report.
+For the next session, use the matrix in `ROADMAP.md`. After `arboard`, direct `rustix` and `fs4` (`horizon-platform`) isolation, `winit 0.30.13` is the sole remaining transitive `rustix` dependency in `horizon-client`. Keep the working GLES input/render loop and isolate authoritative server initialization and ticks from `winit` and desktop UI/audio dependencies. The original item NBT and in-memory protocol pipe (`horizon_protocol::connection::Pipe`, already linked as ELF64 AArch64 in the scratch harness) are the next integration points.
 
 ## Historical checkpoints
 

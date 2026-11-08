@@ -26,6 +26,7 @@ naga = { path = "../../../third_party/naga" }
 [dependencies]
 libc = "=0.2.191"
 horizon-core = { path = "../../../crates/horizon-core" }
+horizon-platform = { path = "../../../crates/horizon-platform" }
 horizon-world = { path = "../../../crates/horizon-world" }
 horizon-client-core = { path = "../../../crates/horizon-client-core" }
 horizon-items = { path = "../../../crates/horizon-items" }

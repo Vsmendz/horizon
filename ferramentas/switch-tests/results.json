@@ -330,7 +330,7 @@
       "test": "test10_vanilla_world_visuals",
       "build": "passed",
       "link": "passed",
-      "hardware": "pending",
+      "hardware": "user_confirmed_execution",
       "file": "ferramentas/switch-tests/out/test10_vanilla_world_visuals.nro",
       "bytes": 58630065,
       "sha256": "83ba0e8e2e920fac39ab71b0f388b756be74423dd7615c9067d9cbecce810643",
@@ -339,7 +339,26 @@
       "build_log": "ferramentas/switch-tests/out/test10_vanilla_world_visuals.build.log",
       "offline_log": "ferramentas/switch-tests/out/test10_vanilla_world_visuals.offline.log",
       "test_log": "ferramentas/switch-tests/out/test10.gles.log",
-      "runtime_log": "sdmc:/switch/horizon-tests/test10_vanilla_world_visuals.log"
+      "runtime_log": "sdmc:/switch/horizon-tests/test10_vanilla_world_visuals.log",
+      "hardware_log": "test10_vanilla_world_visuals.log",
+      "confirmation": "5640 frames, 23 breaks, 10 placements, two saved columns, RESULT=0, RETURN 0. Streaming and world rendered. Visual defect reported on some trees. First frame 55033 ms, 46 intervals over 33 ms, max interval 108660 us."
+    },
+    {
+      "test": "test10b_woodland_models",
+      "build": "passed",
+      "link": "passed",
+      "hardware": "user_confirmed_execution",
+      "file": "ferramentas/switch-tests/out/test10b_woodland_models.nro",
+      "bytes": 58713241,
+      "sha256": "237eb76dd56fbadba03858918702708e63db4bf1bde1955f2b8c277858604bb1",
+      "elf": "ferramentas/switch-tests/out/test10b_woodland_models.elf",
+      "elf_sha256": "7ded60dc41cd45936b876f7b71079fc74b16d09cba4c2c363f53bd7cf133e223",
+      "build_log": "ferramentas/switch-tests/out/test10b_woodland_models.build.log",
+      "offline_log": "ferramentas/switch-tests/out/test10b_woodland_models.offline.log",
+      "test_log": "ferramentas/switch-tests/out/test10b.gles.log",
+      "runtime_log": "sdmc:/switch/horizon-tests/test10b_woodland_models.log",
+      "hardware_log": "test10b_woodland_models.log",
+      "confirmation": "4574 frames (~59.48 FPS), 7 intervals over 33 ms, max interval 38995 us, first frame 62666 ms, 180 SDK ABI assertions, PLATFORM_STORAGE available_bytes=26329186304, FEATURES unsupported=0 failed=0, two placements, RESULT=0, RETURN 0. Woodland visual confirmation and hardware particle emission (EFFECTS emitted=0) remain pending; MODEL_FALLBACK listed remaining full-block Stone fallbacks."
     }
   ]
 }

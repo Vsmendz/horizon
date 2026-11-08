@@ -2875,7 +2875,11 @@ const STAGING_BUFFER_BYTES: u64 = 6 * 1024 * 1024; // 6 MiB
 #[cfg(target_os = "horizon")]
 pub extern "C" fn rust_horizon_client_main() -> c_int {
     let startup = Instant::now();
-    log_line("INFO Compile-time ABI assertions passed (163 SDK checks)");
+    log_line("INFO Compile-time ABI assertions passed (180 SDK checks)");
+    match horizon_platform::available_space(Path::new("sdmc:/")) {
+        Ok(bytes) => log_line(&format!("PLATFORM_STORAGE available_bytes={bytes}")),
+        Err(error) => log_line(&format!("PLATFORM_STORAGE error={error}")),
+    }
 
     let welcome = Text::literal(format!(
         "Horizon {} (proto {}, data {}) — Real First-Person Client on Switch",

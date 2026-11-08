@@ -275,7 +275,7 @@ pub const LOW_DISK_SPACE: u64 = 67_108_864;
 /// `LevelStorageAccess.estimateDiskSpace`: the usable bytes of the disk holding `dir`
 /// (`FileStore.getUsableSpace`), `u64::MAX` when it cannot be asked.
 pub fn estimate_disk_space(dir: &Path) -> u64 {
-    fs4::available_space(dir).unwrap_or(u64::MAX)
+    horizon_platform::available_space(dir).unwrap_or(u64::MAX)
 }
 /// `LevelStorageAccess.checkForLowDiskSpace`.
 pub fn low_disk_space(dir: &Path) -> bool {

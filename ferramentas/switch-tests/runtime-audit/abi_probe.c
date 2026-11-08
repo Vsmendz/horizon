@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/time.h>
 #include <dirent.h>
 #include <pthread.h>
@@ -12,6 +13,10 @@
 #include <fcntl.h>
 #include <limits.h>
 const unsigned long long measurements[] = {
+(unsigned long long)(sizeof(fsblkcnt_t)),
+(unsigned long long)(_Alignof(fsblkcnt_t)),
+(unsigned long long)(sizeof(fsfilcnt_t)),
+(unsigned long long)(_Alignof(fsfilcnt_t)),
 (unsigned long long)(sizeof(off_t)),
 (unsigned long long)(_Alignof(off_t)),
 (unsigned long long)(sizeof(dev_t)),
@@ -68,6 +73,8 @@ const unsigned long long measurements[] = {
 (unsigned long long)(_Alignof(pthread_barrierattr_t)),
 (unsigned long long)(sizeof(fd_set)),
 (unsigned long long)(_Alignof(fd_set)),
+(unsigned long long)(sizeof(struct statvfs)),
+(unsigned long long)(_Alignof(struct statvfs)),
 (unsigned long long)(sizeof(struct stat)),
 (unsigned long long)(_Alignof(struct stat)),
 (unsigned long long)(sizeof(struct timespec)),
@@ -90,6 +97,26 @@ const unsigned long long measurements[] = {
 (unsigned long long)(_Alignof(struct sockaddr_in6)),
 (unsigned long long)(sizeof(struct addrinfo)),
 (unsigned long long)(_Alignof(struct addrinfo)),
+(unsigned long long)(__builtin_types_compatible_p(fsblkcnt_t,char)),
+(unsigned long long)(__builtin_types_compatible_p(fsblkcnt_t,unsigned char)),
+(unsigned long long)(__builtin_types_compatible_p(fsblkcnt_t,short)),
+(unsigned long long)(__builtin_types_compatible_p(fsblkcnt_t,unsigned short)),
+(unsigned long long)(__builtin_types_compatible_p(fsblkcnt_t,int)),
+(unsigned long long)(__builtin_types_compatible_p(fsblkcnt_t,unsigned int)),
+(unsigned long long)(__builtin_types_compatible_p(fsblkcnt_t,long)),
+(unsigned long long)(__builtin_types_compatible_p(fsblkcnt_t,unsigned long)),
+(unsigned long long)(__builtin_types_compatible_p(fsblkcnt_t,long long)),
+(unsigned long long)(__builtin_types_compatible_p(fsblkcnt_t,unsigned long long)),
+(unsigned long long)(__builtin_types_compatible_p(fsfilcnt_t,char)),
+(unsigned long long)(__builtin_types_compatible_p(fsfilcnt_t,unsigned char)),
+(unsigned long long)(__builtin_types_compatible_p(fsfilcnt_t,short)),
+(unsigned long long)(__builtin_types_compatible_p(fsfilcnt_t,unsigned short)),
+(unsigned long long)(__builtin_types_compatible_p(fsfilcnt_t,int)),
+(unsigned long long)(__builtin_types_compatible_p(fsfilcnt_t,unsigned int)),
+(unsigned long long)(__builtin_types_compatible_p(fsfilcnt_t,long)),
+(unsigned long long)(__builtin_types_compatible_p(fsfilcnt_t,unsigned long)),
+(unsigned long long)(__builtin_types_compatible_p(fsfilcnt_t,long long)),
+(unsigned long long)(__builtin_types_compatible_p(fsfilcnt_t,unsigned long long)),
 (unsigned long long)(__builtin_types_compatible_p(off_t,char)),
 (unsigned long long)(__builtin_types_compatible_p(off_t,unsigned char)),
 (unsigned long long)(__builtin_types_compatible_p(off_t,short)),
@@ -260,6 +287,17 @@ const unsigned long long measurements[] = {
 (unsigned long long)(__builtin_types_compatible_p(pthread_t,unsigned long)),
 (unsigned long long)(__builtin_types_compatible_p(pthread_t,long long)),
 (unsigned long long)(__builtin_types_compatible_p(pthread_t,unsigned long long)),
+(unsigned long long)(offsetof(struct statvfs,f_bsize)),
+(unsigned long long)(offsetof(struct statvfs,f_frsize)),
+(unsigned long long)(offsetof(struct statvfs,f_blocks)),
+(unsigned long long)(offsetof(struct statvfs,f_bfree)),
+(unsigned long long)(offsetof(struct statvfs,f_bavail)),
+(unsigned long long)(offsetof(struct statvfs,f_files)),
+(unsigned long long)(offsetof(struct statvfs,f_ffree)),
+(unsigned long long)(offsetof(struct statvfs,f_favail)),
+(unsigned long long)(offsetof(struct statvfs,f_fsid)),
+(unsigned long long)(offsetof(struct statvfs,f_flag)),
+(unsigned long long)(offsetof(struct statvfs,f_namemax)),
 (unsigned long long)(offsetof(struct stat,st_dev)),
 (unsigned long long)(offsetof(struct stat,st_ino)),
 (unsigned long long)(offsetof(struct stat,st_mode)),
