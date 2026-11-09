@@ -14,6 +14,9 @@ ruzstd = "0.9"
 # The random install ID and outbox file names.
 getrandom = "0.3"
 # Sending, for the launcher (and the game's "I'm playing" ping); the ingest server builds without it.
+ureq = { version = "2", default-features = false, optional = true }
+
+[target.'cfg(not(target_os = "horizon"))'.dependencies]
 ureq = { version = "2", default-features = false, features = ["tls"], optional = true }
 
 [features]
@@ -21,6 +24,7 @@ default = ["upload", "live"]
 upload = ["dep:ureq"]
 # The "I'm playing" ping and reading the live count (`live`), for the game and the launcher.
 live = ["dep:ureq"]
+tls = []
 
 [[test]]
 name = "consent_gating"

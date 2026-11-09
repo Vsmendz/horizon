@@ -5,6 +5,19 @@ Hardware confirmations were supplied by the user in this chat after each nxlink 
 No screenshot, captured framebuffer, or runtime network trace was obtained.
 See results.json for artifact sizes, SHA-256 digests and individual confirmations.
 
+## Test 12 full 27-crate original Horizon client integration
+
+`test12_client_crates` unblocks and statically links the entire 27-crate original Horizon client dependency graph (`horizon-core`, `horizon-platform`, `horizon-threads`, `horizon-world`, `horizon-client-core`, `horizon-client-input`, `horizon-command`, `horizon-protocol`, `horizon-items`, `horizon-assets`, `horizon-theme`, `horizon-cosmetics`, `horizon-hdr`, `horizon-narrator`, `horizon-optifine`, `horizon-shaders`, `horizon-shader-api`, `horizon-telemetry`, `horizon-bench`, `horizon-server-files`, `horizon-anticheat`, `horizon-chat-filter`, `horizon-mcp`, `horizon-friends`, `horizon-mods`, `horizon-client-render`, `horizon-client-lib`, and `horizon-client`) into the Nintendo Switch binary (`out/test12_client_crates.nro`, 63,100,829 bytes, SHA-256 `6a52b4f2feca22fe279ba5102b5ebc87ec88c80bdf3c31ae1eb1eb83924365b1`, ELF SHA-256 `2a87daed4077bef4297ab49a39f9cb46bc9be89bdcad5af087b4b8d6db5fc81c`).
+
+- `ferramentas/switch-tests/vendor/winit`: vendored `winit 0.30.13` with `target_os = "horizon"` excluded from `free_unix` (`build.rs`, `Cargo.toml`) and implemented `src/platform_impl/horizon/mod.rs`, removing the last transitive path to `rustix 1.1.5`, `wayland-client`, `x11-dl` and `calloop`.
+- `crates/horizon-platform`: exported both `__getrandom_v03_custom` (`getrandom` 0.3/0.4) and `__getrandom_custom` (`getrandom` 0.2) in `src/newlib.rs` backed by `libc::getrandom` -> libnx `randomGet`.
+- Desktop-only dependencies isolated under `[target.'cfg(not(target_os = "horizon"))'.dependencies]`: `mimalloc` in `horizon-threads`, `ash` and `wgpu/vulkan` in `horizon-hdr`/`horizon-client-render`/`horizon-client-lib`/`horizon-client`, `ureq/tls` (`ring`) in `horizon-cosmetics`/`horizon-telemetry`/`horizon-server-files`/`horizon-client-render`/`horizon-client-lib`/`horizon-client`, `socket2`/`if-addrs` in `horizon-friends`, and `mio` in `horizon-client-lib` (`Condvar` + `TcpStream` fallback in `crates/horizon-client/src/lan/io_pool.rs`).
+- `horizon-client-switch/src/client_bridge.rs` exercises `horizon-threads` (`worker_count`), `horizon-client-input` (`GlyphStyle::Nintendo`, `Button::by_letter`, `Edges`, `move_vector`, `look_delta`, `KeyBinds`), `horizon-command` (2,446-node Brigadier vanilla command tree and `network::from_packet`), `horizon-protocol` (`Connection::local` over `Pipe::pair` with zlib threshold compression), `horizon-client-render` (`camera`, `OptionsFile`), `horizon-client-lib` (`ticket_levels`, `save::VERSION_NAME`), and `horizon-client` (`game::exit_code`, `mod_api`), logging `CLIENT_CRATES status=ok crates=27 ...` at startup.
+
+## Test 11 complete 35,723-state vanilla model catalog
+
+`test11_vanilla_model_catalog` (`out/test11_vanilla_model_catalog.nro`, 61,974,429 bytes, SHA-256 `34b76d6a587bd2b31874237208ad0149f9dc03df5be1eef60e6de8dab81700c5`) replaces the manual block-model whitelist with `StateModelCatalog` in `horizon-client-switch/src/state_models.rs`, binding all 1,286 registered blocks across all 35,723 `BlockStateId`s (`missing_states=0`, `stone_fallbacks=0`, 80,079 baked quads across 7,883 unique variants and 1,308 textures in a 3.18 MiB bundle).
+
 ## Test 10B woodland state models and platform storage isolation
 
 The Test 10 hardware run (`test10_vanilla_world_visuals.log`) confirmed decorated streaming, 5,640 frames (58.57 FPS across 96.296 s), 46 intervals above 33 ms, a maximum interval of 108.660 ms, a first frame at 55.033 s (down from 63.860 s in Test 9 after skipping structure tables), 2,011 emitted particles (peak 138), 23 block breaks, 10 placements, two saved columns, `RESULT=0` and `RETURN 0`. The owner reported a visual defect on some woodland trees near spawn.

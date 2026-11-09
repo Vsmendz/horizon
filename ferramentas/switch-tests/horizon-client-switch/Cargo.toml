@@ -22,15 +22,25 @@ vanilla-visuals = ["first-person-polish"]
 [patch.crates-io]
 libc = { path = "../vendor/libc" }
 naga = { path = "../../../third_party/naga" }
+wgpu-hal = { path = "../vendor/wgpu-hal" }
+winit = { path = "../vendor/winit" }
 
 [dependencies]
 libc = "=0.2.191"
 horizon-core = { path = "../../../crates/horizon-core" }
 horizon-platform = { path = "../../../crates/horizon-platform" }
+horizon-threads = { path = "../../../crates/horizon-threads" }
 horizon-world = { path = "../../../crates/horizon-world" }
 horizon-client-core = { path = "../../../crates/horizon-client-core" }
+horizon-client-input = { path = "../../../crates/horizon-client-input" }
+horizon-command = { path = "../../../crates/horizon-command" }
+horizon-protocol = { path = "../../../crates/horizon-protocol" }
+horizon-theme = { path = "../../../crates/horizon-theme" }
 horizon-items = { path = "../../../crates/horizon-items" }
 horizon-assets = { path = "../../../crates/horizon-assets" }
+horizon-client-render = { path = "../../../crates/horizon-client-render" }
+horizon-client-lib = { path = "../../../crates/horizon-client-lib", default-features = false }
+horizon-client = { path = "../../../crates/horizon-client", default-features = false }
 wgpu-hal = { path = "../vendor/wgpu-hal", features = ["gles"] }
 wgpu-types = "30.0.0"
 naga = { version = "30.0.0", features = ["wgsl-in", "glsl-out"] }

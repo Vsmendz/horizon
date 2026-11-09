@@ -617,6 +617,7 @@ cfg_if! {
 pub const O_EXCL: c_int = 2048;
 pub const O_SYNC: c_int = 8192;
 pub const O_NONBLOCK: c_int = 16384;
+pub const O_NOFOLLOW: c_int = 0x100000;
 
 pub const O_ACCMODE: c_int = 3;
 cfg_if! {

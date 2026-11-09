@@ -1649,6 +1649,7 @@ name = "horizon-platform"
 version = "0.1.0"
 dependencies = [
  "fs4",
+ "getrandom 0.2.17",
  "libc",
 ]
 

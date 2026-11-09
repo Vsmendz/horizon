@@ -27,7 +27,7 @@ is_integration=name=="test3_horizon_integration"
 is_renderer=name=="test4_horizon_renderer"
 is_worldgen=name=="test7_vanilla_worldgen"
 is_diagnostic=name in ("test8b_vanilla_render_fix", "test8c_gles_pipeline_probe", "test8d_gles_atlas_probe", "test8e_gles_atlas_fix")
-has_all_models=name=="test11_vanilla_model_catalog"
+has_all_models=name in ("test11_vanilla_model_catalog", "test12_client_crates")
 has_visuals=name in ("test10_vanilla_world_visuals", "test10b_woodland_models") or has_all_models
 has_polish=name=="test9_vanilla_first_person_polish" or has_visuals
 has_water=name=="test8f_vanilla_water_fix" or has_polish
@@ -46,6 +46,7 @@ is_client=name in (
     "test10_vanilla_world_visuals",
     "test10b_woodland_models",
     "test11_vanilla_model_catalog",
+    "test12_client_crates",
 )
 is_rust=name in ("test2a_rust", "test2b_rust_egl") or is_std or is_integration or is_renderer or is_client or is_worldgen
 is_c=name=="test2c_posix_c" or is_rust
@@ -100,6 +101,7 @@ if is_rust:
                "-Zjson-target-spec","-Zbuild-std=core,alloc,std,panic_abort",
                "-Zbuild-std-features=compiler-builtins-mem"]
     if is_client:
+        env["RUSTFLAGS"] += ' --cfg getrandom_backend="custom"'
         cargo=[Path.home()/".cargo/bin/cargo","--config",src/"horizon-client-switch/cargo-switch.toml",
                "build","--manifest-path",src/"horizon-client-switch/Cargo.toml","--release",
                "--target",src/"runtime-audit/aarch64-nintendo-switch-newlib.json",

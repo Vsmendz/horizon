@@ -1,3 +1,8 @@
 [patch.crates-io]
 libc = { path = "/mnt/c/Users/Pc vinw/Documents/horizon/ferramentas/switch-tests/vendor/libc" }
 naga = { path = "/mnt/c/Users/Pc vinw/Documents/horizon/third_party/naga" }
+wgpu-hal = { path = "/mnt/c/Users/Pc vinw/Documents/horizon/ferramentas/switch-tests/vendor/wgpu-hal" }
+winit = { path = "/mnt/c/Users/Pc vinw/Documents/horizon/ferramentas/switch-tests/vendor/winit" }
+
+[target.aarch64-nintendo-switch-newlib]
+rustflags = ["--cfg=getrandom_backend=\"custom\""]

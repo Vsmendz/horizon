@@ -66,6 +66,17 @@ fn virtual_interface(name: &str) -> bool {
 /// This machine's addresses worth offering, best first: private IPv4 (the
 /// LAN), shared IPv4 (Tailscale's 100.64/10, CGNAT), other IPv4, one global
 /// IPv6. No link-local or unique-local; loopback on request.
+#[cfg(target_os = "horizon")]
+pub fn interface_addresses(loopback: bool) -> Vec<IpAddr> {
+    let _ = virtual_interface("");
+    if loopback {
+        vec![IpAddr::V4(Ipv4Addr::LOCALHOST)]
+    } else {
+        Vec::new()
+    }
+}
+
+#[cfg(not(target_os = "horizon"))]
 pub fn interface_addresses(loopback: bool) -> Vec<IpAddr> {
     let mut found: Vec<(u8, IpAddr)> = Vec::new();
     for i in if_addrs::get_if_addrs().unwrap_or_default() {

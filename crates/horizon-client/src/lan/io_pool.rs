@@ -8,7 +8,206 @@
 //! integrated server's own player, over an in-memory pipe, is served the same
 //! way: the pipe tells the thread when bytes arrive.
 use horizon_protocol::connection::{ConnReader, ConnWriter, Pipe, Socket};
+#[cfg(not(target_os = "horizon"))]
 use mio::{Events, Interest, Poll, Registry, Token, Waker};
+#[cfg(target_os = "horizon")]
+use self::mio::{Events, Interest, Poll, Registry, Token, Waker};
+
+#[cfg(target_os = "horizon")]
+mod mio {
+    use std::io;
+    use std::sync::{Arc, Condvar, Mutex};
+    use std::time::Duration;
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub struct Token(pub usize);
+
+    #[derive(Clone, Copy)]
+    pub struct Interest(u8);
+    impl Interest {
+        pub const READABLE: Self = Self(1);
+        pub const WRITABLE: Self = Self(2);
+    }
+    impl std::ops::BitOr for Interest {
+        type Output = Self;
+        fn bitor(self, rhs: Self) -> Self {
+            Self(self.0 | rhs.0)
+        }
+    }
+
+    pub struct Event {
+        token: Token,
+    }
+    impl Event {
+        pub fn token(&self) -> Token {
+            self.token
+        }
+        pub fn is_readable(&self) -> bool {
+            true
+        }
+        pub fn is_read_closed(&self) -> bool {
+            false
+        }
+        pub fn is_error(&self) -> bool {
+            false
+        }
+        pub fn is_writable(&self) -> bool {
+            true
+        }
+        pub fn is_write_closed(&self) -> bool {
+            false
+        }
+    }
+
+    pub type Events = Vec<Event>;
+
+    #[derive(Default)]
+    pub struct Shared {
+        woken: Mutex<bool>,
+        cv: Condvar,
+        tokens: Mutex<Vec<usize>>,
+    }
+
+    pub struct Registry {
+        shared: Arc<Shared>,
+    }
+    impl Registry {
+        pub fn register(
+            &self,
+            stream: &mut net::TcpStream,
+            token: Token,
+            _interest: Interest,
+        ) -> io::Result<()> {
+            stream.id = Some(token.0);
+            self.shared
+                .tokens
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(token.0);
+            Ok(())
+        }
+        pub fn deregister(&self, stream: &mut net::TcpStream) -> io::Result<()> {
+            if let Some(id) = stream.id.take() {
+                self.shared
+                    .tokens
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .retain(|&t| t != id);
+            }
+            Ok(())
+        }
+    }
+
+    pub struct Waker {
+        shared: Arc<Shared>,
+    }
+    impl Waker {
+        pub fn new(registry: &Registry, _token: Token) -> io::Result<Self> {
+            Ok(Self {
+                shared: registry.shared.clone(),
+            })
+        }
+        pub fn wake(&self) -> io::Result<()> {
+            let mut woken = self
+                .shared
+                .woken
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            *woken = true;
+            self.shared.cv.notify_all();
+            Ok(())
+        }
+    }
+
+    pub struct Poll {
+        registry: Registry,
+    }
+    impl Poll {
+        pub fn new() -> io::Result<Self> {
+            Ok(Self {
+                registry: Registry {
+                    shared: Arc::default(),
+                },
+            })
+        }
+        pub fn registry(&self) -> &Registry {
+            &self.registry
+        }
+        pub fn poll(&mut self, events: &mut Events, timeout: Option<Duration>) -> io::Result<()> {
+            events.clear();
+            let has_tcp = !self
+                .registry
+                .shared
+                .tokens
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_empty();
+            let wait = match (timeout, has_tcp) {
+                (Some(t), true) => t.min(Duration::from_millis(5)),
+                (Some(t), false) => t,
+                (None, true) => Duration::from_millis(5),
+                (None, false) => Duration::from_millis(100),
+            };
+            let mut woken = self
+                .registry
+                .shared
+                .woken
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if !*woken && !wait.is_zero() {
+                let (guard, _) = self
+                    .registry
+                    .shared
+                    .cv
+                    .wait_timeout(woken, wait)
+                    .unwrap_or_else(|e| e.into_inner());
+                woken = guard;
+            }
+            *woken = false;
+            drop(woken);
+            for &t in self
+                .registry
+                .shared
+                .tokens
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .iter()
+            {
+                events.push(Event { token: Token(t) });
+            }
+            Ok(())
+        }
+    }
+
+    pub mod net {
+        use std::io::{self, Read, Write};
+        pub struct TcpStream {
+            inner: std::net::TcpStream,
+            pub(super) id: Option<usize>,
+        }
+        impl TcpStream {
+            pub fn from_std(inner: std::net::TcpStream) -> Self {
+                Self { inner, id: None }
+            }
+            pub fn shutdown(&self, how: std::net::Shutdown) -> io::Result<()> {
+                self.inner.shutdown(how)
+            }
+        }
+        impl Read for TcpStream {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                self.inner.read(buf)
+            }
+        }
+        impl Write for TcpStream {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                self.inner.write(buf)
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                self.inner.flush()
+            }
+        }
+    }
+}
 use std::{
     io::{ErrorKind, Read, Write},
     sync::{

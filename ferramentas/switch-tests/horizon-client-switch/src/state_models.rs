@@ -1,5 +1,7 @@
 //! Complete vanilla BlockState & Model baking catalog indexed by `BlockStateId`.
-use crate::{ATLAS_SIDE, ModelQuad, VoxelBlock};
+use crate::{ATLAS_SIDE, ModelQuad};
+#[cfg(test)]
+use crate::VoxelBlock;
 use horizon_assets::{
     bake::{BlockModelTransform, bake_block_model, bake_flat_face},
     blockstate::{

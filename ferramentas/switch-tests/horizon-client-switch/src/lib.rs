@@ -23,8 +23,8 @@ mod block_palette;
 mod block_particle_geometry;
 #[cfg(all(test, feature = "vanilla"))]
 mod block_table_probe;
-#[path = "../../../../crates/horizon-client-render/src/camera.rs"]
-pub mod camera;
+pub use horizon_client_render::camera;
+pub mod client_bridge;
 #[cfg(feature = "vanilla-visuals")]
 mod effects;
 #[cfg(feature = "vanilla-visuals")]
@@ -49,14 +49,12 @@ mod first_person_shared;
 mod pixel_test;
 #[cfg(feature = "first-person-polish")]
 mod polish;
-#[allow(dead_code)]
-#[path = "../../../../crates/horizon-client/src/ticket_levels.rs"]
-mod ticket_levels;
+#[allow(unused_imports)]
+use horizon_client_lib::ticket_levels;
 #[cfg(feature = "vanilla")]
 mod vanilla;
 mod world_stream;
 pub use block_palette::VoxelBlock;
-use horizon_core::fast_hash;
 use world_stream::{
     HEIGHT, HorizonClientWorld, Key, MESH_HEIGHT, MIN_Y, StreamChange, StreamWorker, VIEW_DISTANCE,
     player_chunk,
@@ -3068,6 +3066,13 @@ pub extern "C" fn rust_horizon_client_main() -> c_int {
         return 1;
     }
     log_line(&format!("INFO {}", welcome.plain()));
+    match client_bridge::verify_client_crates() {
+        Ok(summary) => log_line(&summary.format_log_line()),
+        Err(error) => {
+            log_line(&format!("FAIL Horizon client crates bridge: {error}"));
+            return 1;
+        }
+    }
 
     // 1. Load Gamepad settings & bake real Minecraft 26.3 assets via `horizon-assets`
     #[cfg(feature = "vanilla")]

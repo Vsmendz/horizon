@@ -374,6 +374,21 @@
       "offline_log": "ferramentas/switch-tests/out/test11_vanilla_model_catalog.offline.log",
       "test_log": "ferramentas/switch-tests/out/test11.gles.log",
       "runtime_log": "sdmc:/switch/horizon-tests/test11_vanilla_model_catalog.log"
+    },
+    {
+      "test": "test12_client_crates",
+      "build": "passed",
+      "link": "passed",
+      "hardware": "pending_user_validation",
+      "file": "ferramentas/switch-tests/out/test12_client_crates.nro",
+      "bytes": 63100829,
+      "sha256": "6a52b4f2feca22fe279ba5102b5ebc87ec88c80bdf3c31ae1eb1eb83924365b1",
+      "elf": "ferramentas/switch-tests/out/test12_client_crates.elf",
+      "elf_sha256": "2a87daed4077bef4297ab49a39f9cb46bc9be89bdcad5af087b4b8d6db5fc81c",
+      "build_log": "ferramentas/switch-tests/out/test12_client_crates.build.log",
+      "offline_log": "ferramentas/switch-tests/out/test12_client_crates.offline.log",
+      "test_log": "ferramentas/switch-tests/out/test12.gles.log",
+      "runtime_log": "sdmc:/switch/horizon-tests/test12_client_crates.log"
     }
   ]
 }

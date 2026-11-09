@@ -10,6 +10,7 @@ description = "Safe operating-system services shared by Horizon clients and serv
 fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
 
 [target.'cfg(target_os = "horizon")'.dependencies]
+getrandom = { version = "0.2", features = ["custom"] }
 libc = "0.2"
 
 [target.'cfg(unix)'.dev-dependencies]

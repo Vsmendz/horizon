@@ -23,6 +23,31 @@ fn usable_bytes(blocks: u64, fragment_size: u64) -> io::Result<u64> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "filesystem size overflow"))
 }
 
+#[cfg(target_os = "horizon")]
+#[unsafe(no_mangle)]
+pub unsafe extern "Rust" fn __getrandom_v03_custom(
+    dest: *mut u8,
+    len: usize,
+) -> Result<(), core::num::NonZeroI32> {
+    let ret = unsafe { libc::getrandom(dest.cast(), len, 0) };
+    if ret >= 0 && (ret as usize) == len {
+        Ok(())
+    } else {
+        Err(core::num::NonZeroI32::new((1 << 16) + 2).unwrap())
+    }
+}
+
+#[cfg(target_os = "horizon")]
+#[unsafe(no_mangle)]
+pub unsafe extern "Rust" fn __getrandom_custom(dest: *mut u8, len: usize) -> u32 {
+    let ret = unsafe { libc::getrandom(dest.cast(), len, 0) };
+    if ret >= 0 && (ret as usize) == len {
+        0
+    } else {
+        (1 << 31) + 2
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
