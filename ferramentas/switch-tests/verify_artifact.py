@@ -50,10 +50,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("name")
     parser.add_argument("stage", type=Path)
+    parser.add_argument("--artifacts", type=Path)
+    parser.add_argument("--history-root", type=Path, help="checkout containing the earlier NROs")
+    parser.add_argument("--allow-missing-history", action="store_true")
     args = parser.parse_args()
     tests = Path(__file__).resolve().parent
-    repo = tests.parents[1]
-    out = tests / "out"
+    repo = args.history_root or tests.parents[1]
+    out = args.artifacts or tests / "out"
     nro, elf = (out / (args.name + ext) for ext in (".nro", ".elf"))
     data = nro.read_bytes()
     assert data[0x10:0x14] == b"NRO0"
@@ -82,12 +85,22 @@ def main():
     assert "ELF64" in header and "AArch64" in header
     assert not run("nm", "-u").strip(), "undefined ELF symbols"
     assert "(NEEDED)" not in run("readelf", "-d"), "dynamic dependencies"
-    prior = json.loads((tests / "results.json").read_text())["results"]
+    index = repo / "ferramentas/switch-tests/results.json"
+    if args.allow_missing_history and not index.is_file():
+        index = tests / "results.json"
+    prior = json.loads(index.read_text())["results"]
+    missing = []
     for item in prior:
-        assert digest(repo / item["file"]) == item["sha256"], item["test"]
+        path = repo / item["file"]
+        if not path.is_file() and args.allow_missing_history:
+            missing.append(item["test"])
+            continue
+        assert digest(path) == item["sha256"], item["test"]
     print(f"ELF64 AArch64: zero undefined symbols, no dynamic dependencies")
     print(f"NRO0/ASET bounds valid; all {len(staged)} RomFS files match staging")
-    print(f"Preserved {len(prior)} recorded NRO hashes")
+    print(f"Matched {len(prior) - len(missing)} of {len(prior)} recorded NRO hashes")
+    if missing:
+        print(f"Historical NROs unavailable for verification: {', '.join(missing)}")
     print(f"NRO {nro.name}: bytes={len(data)} sha256={digest(nro)}")
     print(f"ELF sha256={digest(elf)}")
     print("Hardware validation pending; these are offline integrity checks")
