@@ -15,10 +15,11 @@ done
 export CARGO_TARGET_DIR=/tmp/horizon-switch-target
 export RUSTFLAGS='--cfg getrandom_backend="custom"'
 cd "$build/source"
-cargo --config "$build/switch.toml" build --profile fast \
+cargo --config "$build/switch.toml" rustc --locked --profile fast \
     -p horizon-client --bin horizon-client --features horizon-nx/vulkan \
     --target "$build/aarch64-nintendo-horizon.json" -Zjson-target-spec \
-    -Zbuild-std=core,alloc,std,panic_abort -Zbuild-std-features=compiler-builtins-mem -j "${JOBS:-4}"
+    -Zbuild-std=core,alloc,std,panic_abort -Zbuild-std-features=compiler-builtins-mem -j "${JOBS:-4}" \
+    -- -C link-arg=--defsym=horizon_switch_sysconf=sysconf
 
 stage="$(mktemp -d "$build/package.XXXXXX")"
 mkdir "$stage/romfs"
@@ -44,6 +45,6 @@ elf2nro "$stage/$name.elf" "$stage/$name.nro" \
     --nacp="$stage/app.nacp" --icon="$DEVKITPRO/libnx/default_icon.jpg" --romfsdir="$stage/romfs"
 audit_args=()
 if [[ "${ALLOW_MISSING_HISTORY:-0}" = 1 ]]; then audit_args+=(--allow-missing-history); fi
-python3 "$here/../verify_artifact.py" "$name" "$stage/romfs" \
+python3 "$here/../verify_artifact.py" "$name" "$stage/romfs" --localized-nvk \
     --artifacts "$stage" --history-root "$history" "${audit_args[@]}" | tee "$stage/$name.offline.log"
 cp --no-clobber "$stage/$name."{elf,nro,offline.log} "$out/"

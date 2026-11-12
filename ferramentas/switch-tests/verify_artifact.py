@@ -53,6 +53,7 @@ def main():
     parser.add_argument("--artifacts", type=Path)
     parser.add_argument("--history-root", type=Path, help="checkout containing the earlier NROs")
     parser.add_argument("--allow-missing-history", action="store_true")
+    parser.add_argument("--localized-nvk", action="store_true")
     args = parser.parse_args()
     tests = Path(__file__).resolve().parent
     repo = args.history_root or tests.parents[1]
@@ -83,7 +84,38 @@ def main():
 
     header = run("readelf", "-h")
     assert "ELF64" in header and "AArch64" in header
-    assert not run("nm", "-u").strip(), "undefined ELF symbols"
+    undefined = run("nm", "-u").strip()
+    if args.localized_nvk:
+        # Mesa's loaderless dispatch tables refer to optional entry points.
+        # Localization leaves their zero-valued LOCAL/UND records in .symtab.
+        # Require that no relocation or dynamic import needs any such record.
+        allowed_weak = {
+            "__syscall_abort", "__syscall_assert_func", "__cxa_thread_atexit_impl",
+            "gettid", "statx", "ZSTD_trace_compress_begin", "ZSTD_trace_compress_end",
+            "ZSTD_trace_decompress_begin", "ZSTD_trace_decompress_end",
+        }
+        local, weak = 0, 0
+        for line in run("readelf", "-Ws").splitlines():
+            row = line.split()
+            if len(row) < 8 or row[6] != "UND":
+                continue
+            if row[4] == "LOCAL" and row[7].startswith(("nvk_", "vk_", "wsi_")):
+                local += 1
+            elif row[4] == "WEAK" and row[7] in allowed_weak:
+                weak += 1
+            else:
+                raise ValueError(f"unexpected undefined symbol: {line}")
+            assert int(row[1], 16) == 0, line
+        assert len(undefined.splitlines()) == local + weak
+        assert not any(len(row) >= 8 and row[6] == "UND" for row in
+                       map(str.split, run("readelf", "-W", "--dyn-syms").splitlines()))
+        assert "INTERP" not in run("readelf", "-Wl")
+        relocations = [row[2] for row in map(str.split, run("readelf", "-Wr").splitlines())
+                       if len(row) >= 3 and row[2].startswith("R_AARCH64_")]
+        assert relocations and set(relocations) == {"R_AARCH64_RELATIVE"}
+        print(f"NVK: {local} local and {weak} optional weak zero records; {len(relocations)} relative relocations")
+    else:
+        assert not undefined, "undefined ELF symbols"
     assert "(NEEDED)" not in run("readelf", "-d"), "dynamic dependencies"
     index = repo / "ferramentas/switch-tests/results.json"
     if args.allow_missing_history and not index.is_file():
@@ -96,7 +128,8 @@ def main():
             missing.append(item["test"])
             continue
         assert digest(path) == item["sha256"], item["test"]
-    print(f"ELF64 AArch64: zero undefined symbols, no dynamic dependencies")
+    print("ELF64 AArch64: no unresolved imports or dynamic dependencies" if args.localized_nvk
+          else "ELF64 AArch64: zero undefined symbols, no dynamic dependencies")
     print(f"NRO0/ASET bounds valid; all {len(staged)} RomFS files match staging")
     print(f"Matched {len(prior) - len(missing)} of {len(prior)} recorded NRO hashes")
     if missing:

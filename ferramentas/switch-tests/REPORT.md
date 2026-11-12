@@ -13,6 +13,12 @@ The release already implements libnx service lifecycle, wgpu Vulkan on VI, gilrs
 
 The original client binary passed Cargo check for Horizon/newlib. The Mesa 26.2.4 NVK archive built from `606441c` with the pinned bevy-horizon patch stack. Static localization retained the Vulkan entry points and the named driver tuning symbols. The localized archive SHA-256 is `b4c4c498354356b50ecefc72cc73bfc778337ead7153a201cf5405ef05ef65df`. Resources from the installed 26.3 game passed the original preparer after importing the reference's pinned Mojang manifest and reusing the local Linux client libraries. Resources stay on the user's machine and SD card.
 
+The executable linked successfully after aliasing the measured libc's `horizon_switch_sysconf` to Horizon-NX's `sysconf`. Both use the SDK's page size query value 8. The restored SDK reproduced all 371 recorded C measurements and the pthread initializer bytes. Separate C assertions verified the applet focus value, the NWindow declaration and the software keyboard buffer bound.
+
+The ELF is AArch64 and retains the original `main`, `userAppInit`, `vkGetInstanceProcAddr` and `vkCreateViSurfaceNN`. It has no required undefined symbols or runtime imports. Mesa's symbol table has 1,840 zero-valued local optional entry points and nine optional weak records. All 57,366 runtime relocations are relative. NRO0 and ASET bounds and the one-file RomFS passed verification. The audit could not repeat any of the 24 historical digests because those NROs were absent from the sparse checkout. The recorded digests and original branch are retained.
+
+The experimental artifact is `out/horizon_switch_hybrid.nro`, 51,293,277 bytes, SHA-256 `e28499a49c85619b62bc4e8a2562e2e49e980f8243cc16dc374b119e97bf7ae6`. The associated ELF SHA-256 is `0cdb2e44c6d5231f4d8718e7bcf52eeeb2cc31c652d921769535ff623f4d9c73`. The complete client and NVK link is an offline result. Menu, world rendering, singleplayer, controls, inventory, audio, persistence and exit still need a console run.
+
 No performance comparison has been made between this client and the GLES prototype. Use the console checklist in the integration README and compare the same world, camera route, resolution, render distance, VSync and console mode before attributing differences to the backend.
 
 ## Test 12 full 27-crate original Horizon client integration

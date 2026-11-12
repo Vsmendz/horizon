@@ -401,6 +401,17 @@
     "nvk_build": "passed",
     "hardware": "pending",
     "sd_root": "sdmc:/switch/horizon-hybrid",
-    "historical_artifacts": "unavailable in original sparse checkout"
+    "historical_artifacts": "24 unavailable during final audit in original sparse checkout",
+    "build": "passed",
+    "link": "passed",
+    "offline_audit": "passed",
+    "file": "ferramentas/switch-tests/out/horizon_switch_hybrid.nro",
+    "bytes": 51293277,
+    "sha256": "e28499a49c85619b62bc4e8a2562e2e49e980f8243cc16dc374b119e97bf7ae6",
+    "elf": "ferramentas/switch-tests/out/horizon_switch_hybrid.elf",
+    "elf_sha256": "0cdb2e44c6d5231f4d8718e7bcf52eeeb2cc31c652d921769535ff623f4d9c73",
+    "build_log": "ferramentas/switch-tests/out/horizon_switch_hybrid.link-retry.log",
+    "offline_log": "ferramentas/switch-tests/out/horizon_switch_hybrid.offline.log",
+    "runtime_log": "sdmc:/switch/horizon-hybrid/log.txt"
   }
 }
