@@ -2,6 +2,7 @@
 # WSL adaptation of bevy-horizon's scripts/build_nvk.sh (MIT OR Apache-2.0).
 # Expects pinned Mesa and bevy-horizon checkouts and a host tools prefix.
 set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
 mesa="$(realpath "$1")"
 bevy="$(realpath "$2")"
 tools="$(realpath "$3")"
@@ -73,7 +74,4 @@ ninja -C builddir-switch -j "${JOBS:-6}" src/nouveau/vulkan/libvulkan.a
 aarch64-none-elf-ranlib builddir-switch/src/nouveau/vulkan/libvulkan.a
 mkdir -p "$bevy/nvk/lib"
 cp builddir-switch/src/nouveau/vulkan/libvulkan.a "$bevy/nvk/lib/"
-(
-    cd "$bevy"
-    bash scripts/localize_nvk.sh
-)
+bash "$here/localize-nvk.sh" "$bevy/nvk/lib/libvulkan.a"

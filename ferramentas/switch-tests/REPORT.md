@@ -5,6 +5,16 @@ Hardware confirmations were supplied by the user in this chat after each nxlink 
 No screenshot, captured framebuffer, or runtime network trace was obtained.
 See results.json for artifact sizes, SHA-256 digests and individual confirmations.
 
+## Horizon-NX integration
+
+The experimental overlay uses the v0.1.0 client at `9ee0e68`. Git's peeled tag, both remotes' `switch-release` ref and the published `release.json` agree. The common ancestor with Test 12 is `d5c4248f6`. The release branch is distinct from `switch` at `d9de2d370`. Details and attribution are in [hybrid/README.md](hybrid/README.md).
+
+The release already implements libnx service lifecycle, wgpu Vulkan on VI, gilrs controller handling, system keyboard, the original title and the integrated server. Building it required adapters absent from its public release tree. The integration reuses the previous winit implementation for the Rust window API and adds libnx's real NWindow, applet focus and redraw dispatch. The wgpu 30.0.1 crates enable Vulkan on Horizon to reach the original HAL. The SDK layout disagreed with the public bevy-horizon rustix patch in six places, including sockaddr and ioctl. The overlay eliminates the desktop dependency for those paths and reuses the audited `statvfs` storage adapter. The controller and audio crates are enabled. Their hardware behavior has yet to be tested.
+
+The original client binary passed Cargo check for Horizon/newlib. The Mesa 26.2.4 NVK archive built from `606441c` with the pinned bevy-horizon patch stack. Static localization retained the Vulkan entry points and the named driver tuning symbols. The localized archive SHA-256 is `b4c4c498354356b50ecefc72cc73bfc778337ead7153a201cf5405ef05ef65df`. Resources from the installed 26.3 game passed the original preparer after importing the reference's pinned Mojang manifest and reusing the local Linux client libraries. Resources stay on the user's machine and SD card.
+
+No performance comparison has been made between this client and the GLES prototype. Use the console checklist in the integration README and compare the same world, camera route, resolution, render distance, VSync and console mode before attributing differences to the backend.
+
 ## Test 12 full 27-crate original Horizon client integration
 
 `test12_client_crates` unblocks and statically links the entire 27-crate original Horizon client dependency graph (`horizon-core`, `horizon-platform`, `horizon-threads`, `horizon-world`, `horizon-client-core`, `horizon-client-input`, `horizon-command`, `horizon-protocol`, `horizon-items`, `horizon-assets`, `horizon-theme`, `horizon-cosmetics`, `horizon-hdr`, `horizon-narrator`, `horizon-optifine`, `horizon-shaders`, `horizon-shader-api`, `horizon-telemetry`, `horizon-bench`, `horizon-server-files`, `horizon-anticheat`, `horizon-chat-filter`, `horizon-mcp`, `horizon-friends`, `horizon-mods`, `horizon-client-render`, `horizon-client-lib`, and `horizon-client`) into the Nintendo Switch binary (`out/test12_client_crates.nro`, 63,100,829 bytes, SHA-256 `6a52b4f2feca22fe279ba5102b5ebc87ec88c80bdf3c31ae1eb1eb83924365b1`, ELF SHA-256 `2a87daed4077bef4297ab49a39f9cb46bc9be89bdcad5af087b4b8d6db5fc81c`).

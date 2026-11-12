@@ -390,5 +390,17 @@
       "test_log": "ferramentas/switch-tests/out/test12.gles.log",
       "runtime_log": "sdmc:/switch/horizon-tests/test12_client_crates.log"
     }
-  ]
+  ],
+  "original_client_integration": {
+    "branch": "integration/horizon-nx",
+    "baseline": "6637dfe553db818914687e1c292ad0f10456d33d",
+    "horizon_nx_revision": "9ee0e68f703c53861dc4891f4d4976c6dd34dd05",
+    "mesa_revision": "606441c90e459028a50fca352daebfc20211f890",
+    "nvk_archive_sha256": "b4c4c498354356b50ecefc72cc73bfc778337ead7153a201cf5405ef05ef65df",
+    "original_client_check": "passed",
+    "nvk_build": "passed",
+    "hardware": "pending",
+    "sd_root": "sdmc:/switch/horizon-hybrid",
+    "historical_artifacts": "unavailable in original sparse checkout"
+  }
 }

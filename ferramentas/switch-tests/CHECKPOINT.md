@@ -1,5 +1,15 @@
 # Current Switch runtime checkpoint
 
+## Horizon-NX original client integration
+
+The experimental worktree is on `integration/horizon-nx` at the Test 12 baseline `6637dfe553db818914687e1c292ad0f10456d33d`. The integration overlays Horizon-NX v0.1.0 at `9ee0e68f703c53861dc4891f4d4976c6dd34dd05`. The public release manifest reports the same revision. See [the pinned sources, build commands and SD layout](hybrid/README.md).
+
+The original `horizon-client` executable passed the AArch64/newlib check with audio and controllers. The build uses the original menu, integrated server, gameplay and Vulkan HAL. The overlay supplies a libnx window and event loop, shares the measured libc, RNG and storage adapters, and isolates the SD root. The NVK driver compiled and was localized to `libvulkan_bh.a` (SHA-256 `b4c4c498354356b50ecefc72cc73bfc778337ead7153a201cf5405ef05ef65df`). Final client link and physical validation are separate gates.
+
+Local WSL state is in `~/.cache/horizon-nx-integration`: `build-05/source` and `build-05/client.check.log`, `nvk.clc.log` and `nvk.localize.log`. The prepared client resources are under `prepare-fresh/.local/horizon-client/26.3`. The preparer generated `horizon-resources.json` for data version 5023 and 21,489 resource entries. Four large table hashes matched the manifest.
+
+During this build the original checkout switched to sparse checkout with only the shader pack path. The historical NROs and SDK became unavailable at their original paths. The integration worktree retained its original source and results index. The SDK was reconstructed in WSL from the existing pinned devkitPro image under `sdk-recovery/ferramentas/devkitpro`. A new audit may record the old NROs as unavailable when `ALLOW_MISSING_HISTORY=1` is set. A present NRO with a mismatched digest still fails the audit.
+
 ## Test 10B continuation
 
 The Test 10 hardware run (`test10_vanilla_world_visuals.log`) is confirmed as executed on physical hardware: 5,640 frames (58.57 FPS), 46 frame intervals above 33 ms, maximum interval 108.660 ms, first frame at 55.033 s, 2,011 emitted particles (peak 138), 23 breaks, 10 placements, two saved columns, `RESULT=0` and `RETURN 0`. The owner reported a visual defect on some woodland trees near spawn.
