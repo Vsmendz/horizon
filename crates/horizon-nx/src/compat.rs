@@ -167,7 +167,9 @@ pub mod horizon_stubs {
     #[unsafe(no_mangle)]
     pub extern "C" fn userAppInit() {
         let tp = set_thread_pointer();
+        crate::splash::mark_boot();
         start_boot_log(tp);
+        crate::splash::stamp("user_app_init");
     }
 
     /// libnx calls this weak hook first in `__appExit`, whenever the NRO ends itself: `main`
@@ -178,6 +180,7 @@ pub mod horizon_stubs {
     /// written.
     #[unsafe(no_mangle)]
     pub extern "C" fn userAppExit() {
+        crate::splash::close();
         crate::lifecycle::release_horizon_services();
     }
 

@@ -254,9 +254,7 @@ fn nro_stem(path: &str) -> Option<&str> {
 pub fn nro_dir() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "horizon")]
     {
-        let path = nro_path()?;
-        let dir = path.rsplit_once(['/', ':']).map_or("", |(dir, _)| dir);
-        Some(std::path::PathBuf::from(dir))
+        Some(std::path::PathBuf::from(crate::ENHANCED_HOME))
     }
     #[cfg(not(target_os = "horizon"))]
     {
@@ -274,16 +272,10 @@ fn open_log_file(app_name: &str, opened_by: &str) {
         ffi::mkdir(c"sdmc:/switch".as_ptr(), 0o777);
     }
 
-    let app_dir = format!("sdmc:/switch/{app_name}");
-    let app_dir_c = CString::new(app_dir.as_str()).unwrap_or_default();
+    let dir = crate::ENHANCED_HOME.to_owned();
+    let app_dir_c = CString::new(dir.as_str()).unwrap_or_default();
     unsafe { ffi::mkdir(app_dir_c.as_ptr(), 0o777) };
-
-    let mut dir = app_dir;
-    let mut fd = open_truncated(&dir);
-    if fd < 0 {
-        dir = "sdmc:".to_string();
-        fd = open_truncated(&dir);
-    }
+    let fd = open_truncated(&dir);
     if fd < 0 {
         return;
     }

@@ -15,6 +15,11 @@
 pub mod compat;
 pub mod lifecycle;
 pub mod logging;
+#[cfg(any(test, target_os = "horizon"))]
+pub mod splash;
+
+#[cfg(target_os = "horizon")]
+pub const ENHANCED_HOME: &str = "sdmc:/switch/horizon-enhanced";
 
 #[cfg(target_os = "horizon")]
 mod memory;
@@ -72,7 +77,7 @@ pub fn init() {
     {
         lifecycle::init_horizon_services();
         lifecycle::configure_memory_line_from_env();
-        init_switch_logging("horizon");
+        init_switch_logging("horizon-enhanced");
         // A homebrew loader leaves the working directory undefined, and the game resolves its
         // game home, options.txt, saves/ and world/ from it. Move into the NRO's own folder so
         // every file the user puts next to the NRO is found. No-op when the loader already

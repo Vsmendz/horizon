@@ -131,26 +131,10 @@ pub fn download_size() -> Option<u64> {
 /// Starts the launch's one check on a thread of its own: on the Switch, the first time the title
 /// screen is made.
 pub fn start_check() {
-    #[cfg(target_os = "horizon")]
-    {
-        static STARTED: std::sync::Once = std::sync::Once::new();
-        STARTED.call_once(|| spawn("update check", check));
-    }
+    // Enhanced builds have their own release channel.
 }
 
-/// Starts the download of the available release (again, after a failure).
-pub fn start_download() {
-    let mut state = state();
-    let (Status::Available { version } | Status::Failed { version }) = state.status else {
-        return;
-    };
-    let Some(release) = state.release.clone() else {
-        return;
-    };
-    state.status = Status::Downloading { version, percent: 0 };
-    drop(state);
-    spawn("update download", move || install(release));
-}
+pub fn start_download() {}
 
 /// Once the new NRO is in place: asks the loader to start it after this one, as the game quits.
 pub fn quit_to_update() {

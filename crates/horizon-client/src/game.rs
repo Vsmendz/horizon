@@ -433,18 +433,10 @@ fn exe_dir() -> Result<std::path::PathBuf> {
 /// the end of its line. This is how a render-distance cap or `--test-terrain` reaches the game
 /// without a reflash. The tokens are logged, so a mistyped file shows up in the log.
 fn launch_args() -> impl Iterator<Item = String> {
-    let mut file_args: Vec<String> = Vec::new();
-    if cfg!(target_os = "horizon") {
-        let text = exe_dir().and_then(|dir| Ok(std::fs::read_to_string(dir.join("args.txt"))?));
-        for line in text.as_deref().unwrap_or_default().lines() {
-            let line = line.split('#').next().unwrap_or_default();
-            file_args.extend(line.split_whitespace().map(str::to_string));
-        }
-        if !file_args.is_empty() {
-            log::info!("Horizon: args.txt next to the NRO supplied: {}", file_args.join(" "));
-        }
-    }
-    std::env::args().skip(1).chain(file_args)
+    #[cfg(target_os = "horizon")]
+    return ["--resources", "resources"].into_iter().map(str::to_owned);
+    #[cfg(not(target_os = "horizon"))]
+    std::env::args().skip(1)
 }
 impl Options {
     /// The name to join servers with: the one given, else the offline name kept
@@ -573,12 +565,6 @@ impl Options {
             session_file: std::env::var("HORIZON_SESSION_FILE").ok(),
             session_stdin: false,
         };
-        // A homebrew loader passes no arguments, so the Switch build runs as a dedicated server
-        // unless a `client.txt` marker sits next to the NRO.
-        if cfg!(target_os = "horizon") && !exe_dir.join("client.txt").exists() {
-            o.execution_role = execution_role::ExecutionRole::DedicatedServer;
-            o.dedicated = Some(Vec::new());
-        }
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--help" | "-h" => {
@@ -16582,6 +16568,8 @@ fn loading_renderer(
     if let Some(atlas) = atlas {
         atlas.font.reset_cache();
     }
+    #[cfg(target_os = "horizon")]
+    horizon_nx::splash::stamp("vulkan_init");
     let mut renderer = pollster::block_on(Renderer::new(
         window,
         offscreen,
@@ -16921,7 +16909,14 @@ impl Loading {
             }
         };
         horizon_client::telemetry::note_display(&window);
+        #[cfg(target_os = "horizon")]
+        if horizon_nx::splash::active() && self.gui.is_none() {
+            self.window = Some(window);
+            return;
+        }
         let offscreen = self.options.as_ref().is_some_and(|o| o.offscreen);
+        #[cfg(target_os = "horizon")]
+        horizon_nx::splash::close();
         match loading_renderer(
             window.clone(),
             offscreen,
@@ -16963,6 +16958,11 @@ impl Loading {
         let Some(window) = self.window.clone() else {
             return;
         };
+        #[cfg(target_os = "horizon")]
+        {
+            horizon_nx::splash::stamp("interface_ready");
+            horizon_nx::splash::close();
+        }
         let offscreen = self.options.as_ref().is_some_and(|o| o.offscreen);
         if let Some(renderer) = &mut self.renderer {
             renderer.release_surface();
@@ -16998,6 +16998,20 @@ impl Loading {
             event_loop.exit();
             return;
         }
+        #[cfg(target_os = "horizon")]
+        {
+            if !horizon_nx::process_applet_messages() {
+                event_loop.exit();
+                return;
+            }
+            if horizon_nx::splash::active() {
+                horizon_nx::splash::draw(self.progress.line());
+                event_loop.set_control_flow(ControlFlow::WaitUntil(
+                    Instant::now() + std::time::Duration::from_millis(100),
+                ));
+                return;
+            }
+        }
         // The controllers work on the title from its first frame.
         self.poll_title_pad(event_loop);
         if self.error.is_some() {
@@ -17010,7 +17024,12 @@ impl Loading {
                 w.request_redraw();
             }
         }
+        #[cfg(not(target_os = "horizon"))]
         event_loop.set_control_flow(ControlFlow::Poll);
+        #[cfg(target_os = "horizon")]
+        event_loop.set_control_flow(ControlFlow::WaitUntil(
+            Instant::now() + std::time::Duration::from_millis(16),
+        ));
     }
     fn draw(&mut self) {
         let Some(size) = self
@@ -17027,16 +17046,26 @@ impl Loading {
             self.started.elapsed().as_secs_f32(),
             self.settings.file.double("panoramaScrollSpeed") as f32,
         );
+        let mut presented = false;
         if let Some(renderer) = &mut self.renderer {
             match renderer.render(&frame) {
-                Ok(true) if self.gui.is_some() && self.menu.pending.is_none() => {
-                    self.menu.perf.title_shown()
+                Ok(true) => {
+                    presented = true;
+                    if self.gui.is_some() && self.menu.pending.is_none() {
+                        self.menu.perf.title_shown();
+                        #[cfg(target_os = "horizon")]
+                        if !self.shown {
+                            horizon_nx::splash::stamp("first_menu_frame");
+                        }
+                    }
                 }
-                Ok(_) => {}
+                Ok(false) => {}
                 Err(e) => log::warn!("Horizon: loading screen frame failed: {e}"),
             }
         }
-        if !self.shown {
+        if presented && !self.shown {
+            #[cfg(target_os = "horizon")]
+            horizon_nx::splash::stamp("first_vulkan_frame");
             self.shown = true;
             log::info!(
                 "Horizon: loading screen shown after {} ms",
@@ -17156,7 +17185,7 @@ impl ApplicationHandler for App {
             }
             App::Loading(loading) => {
                 loading.about_to_wait(event_loop);
-                if loading.error.is_some() {
+                if event_loop.exiting() || loading.error.is_some() {
                     event_loop.exit();
                     return;
                 }
@@ -17298,6 +17327,8 @@ pub fn run() -> Result<()> {
     horizon_client::spans::enable(options.spikes.is_some());
     let vanilla_root = options.resources.clone();
     if let Some(error) = missing_resources(&vanilla_root) {
+        #[cfg(target_os = "horizon")]
+        horizon_nx::splash::close();
         // The game build started by hand (the release's zip), not by the
         // launcher: a window says where to get it. Scripts and servers get
         // the error.

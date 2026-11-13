@@ -3,10 +3,48 @@ use std::path::PathBuf;
 fn main() {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os == "horizon" {
+        let sdk = PathBuf::from(std::env::var_os("DEVKITPRO").expect("DEVKITPRO"));
+        let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
+        let cc = sdk.join("devkitA64/bin/aarch64-none-elf-gcc");
+        let ar = sdk.join("devkitA64/bin/aarch64-none-elf-ar");
+        println!("cargo:rerun-if-env-changed=DEVKITPRO");
+        println!("cargo:rerun-if-changed=src/splash_native.c");
+        assert!(
+            std::process::Command::new(cc)
+                .args([
+                    "-D__SWITCH__",
+                    "-fPIC",
+                    "-O2",
+                    "-march=armv8-a+crc+crypto",
+                    "-mtp=soft",
+                    "-I"
+                ])
+                .arg(sdk.join("libnx/include"))
+                .args(["-c", "src/splash_native.c", "-o"])
+                .arg(out.join("splash.o"))
+                .status()
+                .expect("devkitA64 gcc")
+                .success()
+        );
+        assert!(
+            std::process::Command::new(ar)
+                .arg("rcs")
+                .arg(out.join("libenhanced_splash.a"))
+                .arg(out.join("splash.o"))
+                .status()
+                .expect("devkitA64 ar")
+                .success()
+        );
+        println!("cargo:rustc-link-search=native={}", out.display());
+        println!("cargo:rustc-link-lib=static=enhanced_splash");
         println!("cargo:rustc-link-search=native=/opt/devkitpro/libnx/lib");
         println!("cargo:rustc-link-search=native=/opt/devkitpro/portlibs/switch/lib");
-        println!("cargo:rustc-link-search=native=/opt/devkitpro/devkitA64/aarch64-none-elf/lib/pic");
-        println!("cargo:rustc-link-search=native=/opt/devkitpro/devkitA64/lib/gcc/aarch64-none-elf/16.1.0/pic");
+        println!(
+            "cargo:rustc-link-search=native=/opt/devkitpro/devkitA64/aarch64-none-elf/lib/pic"
+        );
+        println!(
+            "cargo:rustc-link-search=native=/opt/devkitpro/devkitA64/lib/gcc/aarch64-none-elf/16.1.0/pic"
+        );
         println!("cargo:rustc-link-lib=nx");
         println!("cargo:rustc-link-lib=sysbase");
         println!("cargo:rustc-link-lib=c");
@@ -31,7 +69,9 @@ fn link_nvk() {
     let dir = match std::env::var_os("HORIZON_NX_NVK_LIB") {
         Some(dir) => PathBuf::from(dir),
         // horizon-port/nvk/lib, next to the bevy-horizon checkout.
-        None => PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap()).join("../../../nvk/lib"),
+        None => {
+            PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap()).join("../../../nvk/lib")
+        }
     };
     let lib = dir.join("libvulkan_bh.a");
     if !lib.is_file() {

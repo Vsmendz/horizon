@@ -19,11 +19,22 @@ fn main() {
     // Switch: mount romfs, bring up BSD sockets, set the applet focus mode and open `log.txt`
     // before anything allocates. Also what pulls the libnx lifecycle hooks into the link.
     #[cfg(target_os = "horizon")]
-    horizon_nx::init();
+    {
+        let root = std::path::Path::new(horizon_nx::ENHANCED_HOME);
+        if let Err(error) = std::fs::create_dir_all(root).and_then(|()| std::env::set_current_dir(root)) {
+            eprintln!("Enhanced SD directory: {error}");
+            return;
+        }
+        horizon_nx::splash::open();
+        horizon_nx::init();
+    }
     horizon_threads::configure_allocator();
     std::hint::black_box(&MOD_API_LEVEL);
     horizon_client::telemetry::mark_start();
+    #[cfg(not(target_os = "horizon"))]
     let args: Vec<String> = std::env::args().skip(1).collect();
+    #[cfg(target_os = "horizon")]
+    let args: Vec<String> = Vec::new();
     let game_args = args.iter().take_while(|a| *a != "--dedicated");
     let help = game_args
         .clone()
