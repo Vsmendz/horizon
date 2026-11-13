@@ -31,3 +31,9 @@ bash "$source/tools/switch-enhanced/package.sh" \
 ## Console test
 
 Copy the prepared 26.3 resource directory contents to `sdmc:/switch/horizon-enhanced/resources/`. Start the Enhanced NRO through an application title override. Record video from launch to title, test touch and controller input, create an experimental world, edit a block, exit and reopen. Collect `sdmc:/switch/horizon-enhanced/log.txt`. First test without a shader pack. Use the existing original NRO in `sdmc:/switch/horizon/` for rollback.
+
+## Artifact checks
+
+The WSL build linked Rust and NVK into the AArch64 ELF. The verifier checked native splash, touchscreen and Vulkan symbols, zero required undefined imports, relative-only runtime relocations, NRO0 and ASET bounds and a one-file RomFS matching the staged provenance. The splash and two touch host tests passed. The original v0.1.0 session remains the only hardware evidence. The rebuilt driver, replacement newlib allocator path and new window handoff still require console validation.
+
+Use `python tools/switch-enhanced/compare-startup.py BASELINE_LOG ENHANCED_LOG` to compare stage timing. The game elapsed times and the Enhanced `userAppInit` clock have distinct origins. Record a video to compare the first visible frame from the same launch action. Take a cold launch and a second launch with the same resources, world settings, clock settings and shader state.

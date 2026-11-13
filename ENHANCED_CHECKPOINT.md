@@ -7,3 +7,5 @@ The release client now opens a libnx linear framebuffer before the normal servic
 The Enhanced app uses `sdmc:/switch/horizon-enhanced/` for resources, settings, saves and logs, and its update checker and downloader are disabled. The log stamps start at `userAppInit`. Touch feeds the original GUI pointer path for presses, moves and releases.
 
 Use [ENHANCED_REPORT.md](ENHANCED_REPORT.md) for measurements and the build and console procedure.
+
+The offline-verified artifact is `dist/horizon_nx_enhanced.nro`, 51,313,553 bytes. SHA-256 `6d6777b765b3d94ced73205eccc00ee932a4d2ca14bdad4a220a07b599568432`. The linked ELF is 66,905,392 bytes with SHA-256 `a2c06d60a4d15d5ecade9ee63d7d80ea9da9e7fce6e2b0134bb0033bfc82177f`. Executable sources are from `ff0aff0c6` with the SDK overlay; subsequent commits add the tools and report. The package provenance records `d6191a5dc`. The archive has the original title and world code, the native splash and the HID adapter. Physical execution, cold and warm timings and save reopen are pending.
