@@ -155,12 +155,11 @@ unsafe extern "C" {
 
     runtime = source / "crates/horizon-nx"
     build_rs = runtime / "build.rs"
-    replace(build_rs, "    if target_os == \"horizon\" {", """    if target_os == "horizon" {
-        println!("cargo:rerun-if-env-changed=DEVKITPRO");
+    replace(build_rs, '        let sdk = PathBuf::from(std::env::var_os("DEVKITPRO").expect("DEVKITPRO"));', """        let sdk = PathBuf::from(std::env::var_os("DEVKITPRO").expect("DEVKITPRO"));
+        let sdk_path = sdk.display();
         println!("cargo:rerun-if-env-changed=HORIZON_GCC_VERSION");
-        let sdk = std::env::var("DEVKITPRO").expect("DEVKITPRO");
-        let gcc = std::env::var("HORIZON_GCC_VERSION").expect("HORIZON_GCC_VERSION");""")
-    build_rs.write_text(build_rs.read_text().replace("/opt/devkitpro", "{sdk}").replace("16.1.0/pic", "{gcc}/pic"))
+        let gcc_version = std::env::var("HORIZON_GCC_VERSION").expect("HORIZON_GCC_VERSION");""")
+    build_rs.write_text(build_rs.read_text().replace("/opt/devkitpro", "{sdk_path}").replace("16.1.0/pic", "{gcc_version}/pic"))
 
     client = source / "crates/horizon-client/src"
 
