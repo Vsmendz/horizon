@@ -76,6 +76,8 @@ pub fn init() {
     #[cfg(target_os = "horizon")]
     {
         lifecycle::init_horizon_services();
+        unsafe extern "C" { fn enhanced_touch_init(); }
+        unsafe { enhanced_touch_init(); }
         lifecycle::configure_memory_line_from_env();
         init_switch_logging("horizon-enhanced");
         // A homebrew loader leaves the working directory undefined, and the game resolves its

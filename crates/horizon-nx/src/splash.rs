@@ -11,7 +11,7 @@ mod native;
 #[cfg(target_os = "horizon")]
 pub(crate) use native::mark_boot;
 #[cfg(target_os = "horizon")]
-pub use native::{active, close, draw, open, stamp};
+pub use native::{active, close, draw, open, stamp, touch_sample};
 
 fn paint(pixels: &mut [u32], stride: usize, stage: &str, ms: u64) {
     for row in pixels.chunks_exact_mut(stride).take(HEIGHT) {

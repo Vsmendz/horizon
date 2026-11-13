@@ -232,6 +232,8 @@ mod spear;
 mod spectator;
 mod spill;
 mod splash_water;
+#[cfg(any(test, target_os = "horizon"))]
+mod switch_touch;
 mod startup_menu;
 mod station_control;
 mod stations;
@@ -1839,6 +1841,8 @@ struct Game<'a> {
     cursor: (f32, f32),
     /// The cursor icon the window shows (`widgets::take_cursor` each frame).
     cursor_icon: horizon_client::widgets::Cursor,
+    #[cfg(target_os = "horizon")]
+    touch: switch_touch::Touch,
     captured: bool,
     /// Only the local player owning keyboard and mouse changes the native pointer.
     keyboard_mouse: bool,
@@ -15210,6 +15214,18 @@ impl ApplicationHandler for Game<'_> {
         }
         #[cfg(target_os = "horizon")]
         horizon_nx::flush_logs();
+        #[cfg(target_os = "horizon")]
+        if let Some(window) = self.window.clone() {
+            let size = window.inner_size();
+            let mut touch = std::mem::take(&mut self.touch);
+            touch.poll(
+                self.pending_save.is_none() && !self.captured && (self.title.is_some() || self.screen != Screen::Playing),
+                [size.width, size.height],
+                |event| self.window_event(event_loop, window.id(), event),
+            );
+            self.touch = touch;
+        }
+
         if horizon_threads::stop_requests() > 0
             && self.pending_save.as_ref().is_none_or(|save| !save.quit)
         {
@@ -15423,6 +15439,8 @@ impl<'a> Game<'a> {
             right: false,
             cursor: (0.0, 0.0),
             cursor_icon: horizon_client::widgets::Cursor::Arrow,
+            #[cfg(target_os = "horizon")]
+            touch: Default::default(),
             captured: false,
             keyboard_mouse: true,
             view_at: [0, 0],
@@ -16868,6 +16886,8 @@ struct Loading {
     /// The loader's `Done` arrived: its channel closing afterwards is expected.
     delivered: bool,
     handle: Option<JoinHandle<()>>,
+    #[cfg(target_os = "horizon")]
+    touch: switch_touch::Touch,
     shown: bool,
     menu: startup_menu::StartupMenu,
     error: Option<Box<dyn std::error::Error>>,
@@ -17011,6 +17031,15 @@ impl Loading {
                 ));
                 return;
             }
+        }
+        #[cfg(target_os = "horizon")]
+        if let Some(window) = self.window.clone() {
+            let size = window.inner_size();
+            let mut touch = std::mem::take(&mut self.touch);
+            touch.poll(self.gui.is_some(), [size.width, size.height], |event| {
+                self.window_event(event_loop, window.id(), event);
+            });
+            self.touch = touch;
         }
         // The controllers work on the title from its first frame.
         self.poll_title_pad(event_loop);
@@ -17270,6 +17299,8 @@ fn run_loading(
         loaded: None,
         delivered: false,
         handle: Some(loader),
+        #[cfg(target_os = "horizon")]
+        touch: Default::default(),
         shown: false,
         menu,
         error: None,

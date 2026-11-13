@@ -18,3 +18,16 @@ void enhanced_splash_end(void) { framebufferEnd(&splash); }
 void enhanced_splash_close(void) { framebufferClose(&splash); }
 u64 enhanced_boot_tick(void) { return armGetSystemTick(); }
 u64 enhanced_boot_ms(u64 start) { return armTicksToNs(armGetSystemTick() - start) / 1000000; }
+
+void enhanced_touch_init(void) { hidInitializeTouchScreen(); }
+
+bool enhanced_touch_sample(u32 *id, u32 *x, u32 *y) {
+    HidTouchScreenState state;
+    if (!hidGetTouchScreenStates(&state, 1) || state.count < 1) return false;
+    *id = state.touches[0].finger_id;
+    *x = state.touches[0].x;
+    *y = state.touches[0].y;
+    return true;
+}
+
+bool enhanced_ui_focused(void) { return appletGetFocusState() == AppletFocusState_InFocus; }

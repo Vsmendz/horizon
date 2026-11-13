@@ -89,3 +89,14 @@ pub fn close() {
         stamp("native_surface_released");
     }
 }
+
+/// Sample the primary contact while the application is in focus.
+pub fn touch_sample() -> Option<(u32, u32, u32)> {
+    unsafe extern "C" {
+        fn enhanced_touch_sample(id: *mut u32, x: *mut u32, y: *mut u32) -> bool;
+        fn enhanced_ui_focused() -> bool;
+    }
+    let (mut id, mut x, mut y) = (0, 0, 0);
+    (unsafe { enhanced_ui_focused() && enhanced_touch_sample(&mut id, &mut x, &mut y) })
+        .then_some((id, x, y))
+}
